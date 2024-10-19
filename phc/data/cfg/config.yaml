@@ -13,7 +13,7 @@ exp_name: &exp_name humanoid_smpl
 headless: True
 seed: 0
 no_log: False
-resume_str: null
+resume_str: 2dn0do4n
 num_threads: 64
 test: False
 dataset: False

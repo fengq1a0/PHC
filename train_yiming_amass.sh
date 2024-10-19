@@ -1,2 +1,2 @@
 export LD_LIBRARY_PATH="/mnt/kostas-graid/sw/envs/fengqiao/miniconda3/envs/isaac/lib:$LD_LIBRARY_PATH"
-python phc/run_hydra.py learning=im_big exp_name=phc_prim_yiming_amass env=env_im robot=smpl_humanoid env.motion_file=data/yiming/train.pkl
+python phc/run_hydra.py learning=im_big exp_name=phc_prim_yiming_amass env=env_im robot=smpl_humanoid env.motion_file=data/yiming/train.pkl epoch=1500

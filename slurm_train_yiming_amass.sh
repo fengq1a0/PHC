@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:a40:1            # number of GPUs per node
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --mem=32G
+#SBATCH --mem=48G
 #SBATCH --cpus-per-task=32          # number of cores per tasks
 #SBATCH --time=1-00:00:00           # maximum execution time (HH:MM:SS)
 
