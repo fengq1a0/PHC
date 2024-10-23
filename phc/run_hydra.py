@@ -283,6 +283,8 @@ def main(cfg_hydra: DictConfig) -> None:
     flags.has_eval = cfg.has_eval
     flags.trigger_input = False
 
+    flags.finetune_wRR = cfg.finetune_wRR
+
     if cfg.server_mode:
         flags.follow = cfg.follow = True
         flags.fixed = cfg.fixed = True
