@@ -1,5 +1,9 @@
-isaacgym
-slurm
+### added by FQ ###
+isaacgym/
+slurm/
+##################
+
+
 *.json
 
 # Byte-compiled / optimized / DLL files
@@ -130,7 +134,7 @@ venv.bak/
  # Pyre type checker
 .pyre/
 checkpoints/
-data/*
+data/
 output/
 log/
 

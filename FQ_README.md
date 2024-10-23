@@ -25,7 +25,7 @@ bash download_data.sh
 ## add this to all your bash scripts
 export LD_LIBRARY_PATH="/mnt/kostas-graid/sw/envs/fengqiao/miniconda3/envs/gym/lib:$LD_LIBRARY_PATH"
 
-## Line: 135 in torch_utils.py
+## Line: 135 in PHC/isaacgym/python/isaacgym/torch_utils.py
 np.float --> np.float32
 
 ## For chumpy and numpy conflict
