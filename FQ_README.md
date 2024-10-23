@@ -31,3 +31,9 @@ np.float --> np.float32
 ## For chumpy and numpy conflict
 in __init__.py
 #from numpy import bool, int, float, complex, object, unicode, str, nan, inf
+
+
+
+# data
+data/amass_smpl/train.pkl
+data/behave/*
