@@ -59,7 +59,7 @@ if __name__ == "__main__":
         smpl_motion = np.load(os.path.join(data_path, "smpl_fit_all.npz"))
         object_motion = np.load(os.path.join(data_path, "object_fit_all.npz"))
 
-        bound = 300           # number of frames to use.
+        bound = 120           # number of frames to use.
         framerate = 30        # framerate of the sequence.
 
         skip = int(framerate/30)

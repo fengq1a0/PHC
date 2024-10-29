@@ -24,6 +24,56 @@ import learning.amp_datasets as amp_datasets
 from phc.learning.loss_functions import kl_multi
 from smpl_sim.utils.math_utils import LinearAnneal
 
+from phc.utils.flags import flags
+
+class LoRALayer(nn.Module):
+    def __init__(self, in_features, out_features, rank=4):
+        super(LoRALayer, self).__init__()
+        # LoRA: Decomposing the weight update into two low-rank matrices
+        self.lora_A = nn.Linear(in_features, rank, bias=False)
+        self.lora_B = nn.Linear(rank, out_features, bias=False)
+        
+        # Initialize LoRA layers
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=0.01)
+        nn.init.zeros_(self.lora_B.weight)
+        
+    def forward(self, x):
+        return self.lora_B(self.lora_A(x))
+
+class MLPWithLoRA(nn.Module):
+    def __init__(self, base_mlp, lora_rank=4):
+        super(MLPWithLoRA, self).__init__()
+        self.base_layers = nn.ModuleList()
+        self.lora_layers = nn.ModuleList()
+        
+        for layer in base_mlp:
+            if isinstance(layer, nn.Linear):
+                # Add base linear layer and freeze it
+                layer.requires_grad_(False)
+                self.base_layers.append(layer)
+                # Add corresponding LoRA layer
+                lora_layer = LoRALayer(layer.in_features, layer.out_features, rank=lora_rank)
+                lora_layer = lora_layer.to(layer.weight.device)  # Ensure LoRA layer is on the same device as base layer
+                self.lora_layers.append(lora_layer)
+            else:
+                # Add non-linear activation functions directly
+                self.base_layers.append(layer)
+                self.lora_layers.append(None)  # No LoRA layer for activations
+    
+    def forward(self, x):
+        for base_layer, lora_layer in zip(self.base_layers, self.lora_layers):
+            if isinstance(base_layer, nn.Linear):
+                with torch.no_grad():
+                    x_base = base_layer(x)  # Apply base layer without gradient update
+                x = x_base + lora_layer(x)  # Apply LoRA layer
+            else:
+                x = base_layer(x)  # Apply activation function
+        return x
+
+
+
+
+
 def load_my_state_dict(target, saved_dict):
     for name, param in saved_dict.items():
         if name not in target:
@@ -106,6 +156,12 @@ class AMPAgent(common_agent.CommonAgent):
         if "kin_optimizer" in weights:
             print("!!!loading kin_optimizer!!! Remove this message asa p!!")
             self.kin_optimizer.load_state_dict(weights['kin_optimizer'])
+        if flags.lora:
+            print("Using LoRA!!!!!!!!!!!")
+            self.model.a2c_network.actor_mlp = MLPWithLoRA(self.model.a2c_network.actor_mlp)
+        if flags.fix_norm:
+            self.freeze_state_weights()
+
         
 
     def freeze_state_weights(self):
@@ -454,6 +510,19 @@ class AMPAgent(common_agent.CommonAgent):
         for _ in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
+                #for k, v in self.dataset[i]:
+                #    print(k, v.shape)
+                # old_values        16 1
+                # old_logp_actions  16
+                # advantages        16
+                # returns           16 1
+                # actions           16 * xxx
+                # obs               16 * xxx
+                # mu                16 * xxx
+                # sigma             16 * xxx
+                # amp_obs           
+                # amp_obj_demo
+                # amp_obj_replay
                 curr_train_info = self.train_actor_critic(self.dataset[i])
 
                 if self.schedule_type == 'legacy':
@@ -778,7 +847,7 @@ class AMPAgent(common_agent.CommonAgent):
 
         # print(f"agent_loss: {disc_loss_agent.item():.3f}  | disc_loss_demo {disc_loss_demo.item():.3f}")
         disc_info = {
-            'disc_loss': disc_loss,
+            'disc_loss': disc_loss.detach() if flags.fix_disc else disc_loss,
             'disc_grad_penalty': disc_grad_penalty.detach(),
             'disc_logit_loss': disc_logit_loss.detach(),
             'disc_agent_acc': disc_agent_acc.detach(),
@@ -853,8 +922,13 @@ class AMPAgent(common_agent.CommonAgent):
         return combined_rewards
 
     def _eval_disc(self, amp_obs):
-        proc_amp_obs = self._preproc_amp_obs(amp_obs)
-        return self.model.a2c_network.eval_disc(proc_amp_obs)
+        if flags.fix_disc:
+            with torch.no_grad():
+                proc_amp_obs = self._preproc_amp_obs(amp_obs)
+                return self.model.a2c_network.eval_disc(proc_amp_obs)
+        else:
+            proc_amp_obs = self._preproc_amp_obs(amp_obs)
+            return self.model.a2c_network.eval_disc(proc_amp_obs)
 
     def _calc_amp_rewards(self, amp_obs):
         disc_r = self._calc_disc_rewards(amp_obs)

@@ -56,6 +56,12 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
 
         self.reward_specs = cfg["env"].get("reward_specs", {"k_pos": 100, "k_rot": 10, "k_vel": 0.1, "k_ang_vel": 0.1, "w_pos": 0.5, "w_rot": 0.3, "w_vel": 0.1, "w_ang_vel": 0.1})
 
+        if flags.position_only or flags.pos_2d_only:
+            self.reward_specs["w_pos"] = 0.5      # 0.5
+            self.reward_specs["w_rot"] = 0      # 0.3
+            self.reward_specs["w_vel"] = 0      # 0.1
+            self.reward_specs["w_ang_vel"] = 0  # 0.1
+
         self._num_joints = len(self._body_names)
         self.device = "cpu"
         if self.device_type == "cuda" or self.device_type == "GPU":
@@ -923,7 +929,10 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                     
                     self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos_extend, body_rot_extend, body_vel, body_ang_vel, ref_rb_pos_extend, ref_rb_rot_extend, ref_body_vel, ref_body_ang_vel, self.reward_specs)
                 else:
-                    self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
+                    if flags.pos_2d_only:
+                        self.rew_buf[:], self.reward_raw = compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
+                    else:
+                        self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
             else:
                 body_pos_subset = body_pos[..., self._track_bodies_id, :]
                 body_rot_subset = body_rot[..., self._track_bodies_id, :]
@@ -1554,6 +1563,39 @@ def compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, b
     # ipdb.set_trace()
     return reward, reward_raw
 
+@torch.jit.script
+def compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, rwd_specs):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, Dict[str, float]) -> Tuple[Tensor, Tensor]
+    k_pos, k_rot, k_vel, k_ang_vel = rwd_specs["k_pos"], rwd_specs["k_rot"], rwd_specs["k_vel"], rwd_specs["k_ang_vel"]
+    w_pos, w_rot, w_vel, w_ang_vel = rwd_specs["w_pos"], rwd_specs["w_rot"], rwd_specs["w_vel"], rwd_specs["w_ang_vel"]
+
+    # body position reward
+    diff_global_body_pos = ref_body_pos - body_pos
+    diff_global_body_pos[:,:,1] = 0
+    diff_body_pos_dist = (diff_global_body_pos**2).mean(dim=-1).mean(dim=-1)
+    r_body_pos = torch.exp(-k_pos * 1.5 * diff_body_pos_dist)
+
+    # body rotation reward
+    diff_global_body_rot = torch_utils.quat_mul(ref_body_rot, torch_utils.quat_conjugate(body_rot))
+    diff_global_body_angle = torch_utils.quat_to_angle_axis(diff_global_body_rot)[0]
+    diff_global_body_angle_dist = (diff_global_body_angle**2).mean(dim=-1)
+    r_body_rot = torch.exp(-k_rot * diff_global_body_angle_dist)
+
+    # body linear velocity reward
+    diff_global_vel = ref_body_vel - body_vel
+    diff_global_vel_dist = (diff_global_vel**2).mean(dim=-1).mean(dim=-1)
+    r_vel = torch.exp(-k_vel * diff_global_vel_dist)
+
+    # body angular velocity reward
+    diff_global_ang_vel = ref_body_ang_vel - body_ang_vel
+    diff_global_ang_vel_dist = (diff_global_ang_vel**2).mean(dim=-1).mean(dim=-1)
+    r_ang_vel = torch.exp(-k_ang_vel * diff_global_ang_vel_dist)
+
+    reward = w_pos * r_body_pos + w_rot * r_body_rot + w_vel * r_vel + w_ang_vel * r_ang_vel
+    reward_raw = torch.stack([r_body_pos, r_body_rot, r_vel, r_ang_vel], dim=-1)
+    # import ipdb
+    # ipdb.set_trace()
+    return reward, reward_raw
 
 @torch.jit.script
 def compute_point_goal_reward(prev_dist, curr_dist):

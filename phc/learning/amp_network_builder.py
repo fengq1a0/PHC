@@ -8,6 +8,49 @@ import numpy as np
 DISC_LOGIT_INIT_SCALE = 1.0
 
 
+class LoRALayer(nn.Module):
+    def __init__(self, in_features, out_features, rank=4):
+        super(LoRALayer, self).__init__()
+        # LoRA: Decomposing the weight update into two low-rank matrices
+        self.lora_A = nn.Linear(in_features, rank, bias=False)
+        self.lora_B = nn.Linear(rank, out_features, bias=False)
+        
+        # Initialize LoRA layers
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=0.01)
+        nn.init.zeros_(self.lora_B.weight)
+        
+    def forward(self, x):
+        return self.lora_B(self.lora_A(x))
+
+class MLPWithLoRA(nn.Module):
+    def __init__(self, base_mlp, lora_rank=4):
+        super(MLPWithLoRA, self).__init__()
+        self.base_layers = nn.ModuleList()
+        self.lora_layers = nn.ModuleList()
+        
+        for layer in base_mlp:
+            if isinstance(layer, nn.Linear):
+                # Add base linear layer and freeze it
+                layer.requires_grad_(False)
+                self.base_layers.append(layer)
+                # Add corresponding LoRA layer
+                self.lora_layers.append(LoRALayer(layer.in_features, layer.out_features, rank=lora_rank))
+            else:
+                # Add non-linear activation functions directly
+                self.base_layers.append(layer)
+                self.lora_layers.append(None)  # No LoRA layer for activations
+        
+    def forward(self, x):
+        for base_layer, lora_layer in zip(self.base_layers, self.lora_layers):
+            if isinstance(base_layer, nn.Linear):
+                x = base_layer(x) + lora_layer(x)  # Apply both base and LoRA layer
+            else:
+                x = base_layer(x)  # Apply activation function
+        return x
+
+
+
+
 class AMPBuilder(network_builder.A2CBuilder):
 
     def __init__(self, **kwargs):
@@ -28,7 +71,10 @@ class AMPBuilder(network_builder.A2CBuilder):
 
             amp_input_shape = kwargs.get('amp_input_shape')
             self._build_disc(amp_input_shape)
-
+            # FQ Hack ############
+            #self.actor_mlp = MLPWithLoRA(self.actor_mlp)
+            #print("Using LoRA!!!")
+            ######################
             return
 
         def load(self, params):
@@ -64,6 +110,9 @@ class AMPBuilder(network_builder.A2CBuilder):
             a_out = a_out.contiguous().view(-1, a_out.size(-1))
 
             if self.has_rnn:
+                # FQ Hack ##################################
+                print("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
+                ############################################
                 if not self.is_rnn_before_mlp:
                     a_out_in = a_out
                     a_out = self.actor_mlp(a_out_in)

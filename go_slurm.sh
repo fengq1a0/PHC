@@ -1,16 +1,16 @@
 #!/bin/bash
-#SBATCH --job-name=train_yiming_amass
+#SBATCH --job-name=go_slurm
 #SBATCH -D .
 #SBATCH --output=slurm/%x_%j_O.log
 #SBATCH --error=slurm/%x_%j_E.log
-#SBATCH --partition=batch
-#SBATCH --gres=gpu:a40:1            # number of GPUs per node
+#SBATCH --partition=liu-compute
+#SBATCH --gres=gpu:l40:1            # number of GPUs per node
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=16          # number of cores per tasks
 #SBATCH --time=1-00:00:00           # maximum execution time (HH:MM:SS)
-
+#SBATCH --qos=ll-med
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -32,4 +32,4 @@ LD_LIBRARY_PATH="/mnt/kostas-graid/sw/envs/fengqiao/local/cuda-12.1/lib64:$LD_LI
 
 
 conda activate isaac
-bash train_yiming_amass.sh
+bash finetune.sh

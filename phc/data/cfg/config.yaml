@@ -1,5 +1,10 @@
 ### added by FQ ###
 finetune_wRR: False
+position_only: False
+pos_2d_only: False
+fix_disc: False
+lora: False
+fix_norm: False
 ###################
 defaults:
   - _self_
