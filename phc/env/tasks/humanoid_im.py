@@ -1,8 +1,9 @@
 
 
 import os.path as osp
-from typing import OrderedDict
+from typing import OrderedDict, Tuple, Dict
 import torch
+from torch import Tensor
 import numpy as np
 from phc.utils.torch_utils import quat_to_tan_norm
 import phc.env.tasks.humanoid_amp_task as humanoid_amp_task
@@ -30,6 +31,7 @@ import imageio
 from collections import deque
 from tqdm import tqdm
 import copy
+
 
 
 class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
