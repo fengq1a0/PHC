@@ -157,7 +157,8 @@ class AMPAgent(common_agent.CommonAgent):
             print("!!!loading kin_optimizer!!! Remove this message asa p!!")
             self.kin_optimizer.load_state_dict(weights['kin_optimizer'])
         if flags.lora:
-            print("Using LoRA!!!!!!!!!!!")
+            print("!!!!!!!!!!Using LoRA!!!!!!!!!!!")
+            print("Remove this asap!")
             self.model.a2c_network.actor_mlp = MLPWithLoRA(self.model.a2c_network.actor_mlp)
         if flags.fix_norm:
             self.freeze_state_weights()
@@ -501,7 +502,6 @@ class AMPAgent(common_agent.CommonAgent):
 
         if self.has_central_value:
             self.train_central_value()
-
         train_info = None
 
         # if self.is_rnn:

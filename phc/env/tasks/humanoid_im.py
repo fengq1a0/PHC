@@ -368,7 +368,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             
         else:
             self._motion_lib = None
-            #MotionLib(motion_file=motion_train_file, dof_body_ids=self._dof_body_ids, dof_offsets=self._dof_offsets, device=self.device)
+            # MotionLib(motion_file=motion_train_file, dof_body_ids=self._dof_body_ids, dof_offsets=self._dof_offsets, device=self.device)
 
         return
 
@@ -1202,6 +1202,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
 
 @torch.jit.script
 def compute_imitation_observations(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, int, bool) -> Tensor
     # We do not use any dof in observation.
     obs = []
     B, J, _ = body_pos.shape
@@ -1238,6 +1239,7 @@ def compute_imitation_observations(root_pos, root_rot, body_pos, body_rot, body_
 
 @torch.jit.script
 def compute_imitation_observations_v2(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, dof_pos, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, ref_dof_pos, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
     # Adding dof
     obs = []
     B, J, _ = body_pos.shape
@@ -1278,6 +1280,7 @@ def compute_imitation_observations_v2(root_pos, root_rot, body_pos, body_rot, bo
 
 @torch.jit.script
 def compute_imitation_observations_v3(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, int, bool) -> Tensor
     # No velocities
     obs = []
     B, J, _ = body_pos.shape
@@ -1305,6 +1308,7 @@ def compute_imitation_observations_v3(root_pos, root_rot, body_pos, body_rot, bo
 
 @torch.jit.script
 def compute_imitation_observations_v6(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
     # Adding pose information at the back
     # Future tracks in this obs will not contain future diffs.
     obs = []
@@ -1357,6 +1361,7 @@ def compute_imitation_observations_v6(root_pos, root_rot, body_pos, body_rot, bo
 
 @torch.jit.script
 def compute_imitation_observations_v7(root_pos, root_rot, body_pos, body_vel, ref_body_pos, ref_body_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor,Tensor, Tensor, Tensor, int, bool) -> Tensor
     # No rotation information. Leave IK for RL.
     # Future tracks in this obs will not contain future diffs.
     obs = []
@@ -1390,6 +1395,7 @@ def compute_imitation_observations_v7(root_pos, root_rot, body_pos, body_vel, re
 
 @torch.jit.script
 def compute_imitation_observations_v8(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
     # Adding pose information at the back
     # Future tracks in this obs will not contain future diffs.
     obs = []
@@ -1461,6 +1467,7 @@ def compute_imitation_observations_v8(root_pos, root_rot, body_pos, body_rot, bo
 
 @torch.jit.script
 def compute_imitation_observations_v9(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_root_vel, ref_body_root_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
     # Adding pose information at the back
     # Future tracks in this obs will not contain future diffs.
     obs = []
@@ -1516,6 +1523,7 @@ def compute_imitation_observations_v9(root_pos, root_rot, body_pos, body_rot, bo
 
 @torch.jit.script
 def compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, rwd_specs):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, Dict[str, float]) -> Tuple[Tensor, Tensor]
     k_pos, k_rot, k_vel, k_ang_vel = rwd_specs["k_pos"], rwd_specs["k_rot"], rwd_specs["k_vel"], rwd_specs["k_ang_vel"]
     w_pos, w_rot, w_vel, w_ang_vel = rwd_specs["w_pos"], rwd_specs["w_rot"], rwd_specs["w_vel"], rwd_specs["w_ang_vel"]
 
@@ -1548,6 +1556,7 @@ def compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, b
 
 @torch.jit.script
 def compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, rwd_specs):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, Dict[str, float]) -> Tuple[Tensor, Tensor]
     k_pos, k_rot, k_vel, k_ang_vel = rwd_specs["k_pos"], rwd_specs["k_rot"], rwd_specs["k_vel"], rwd_specs["k_ang_vel"]
     w_pos, w_rot, w_vel, w_ang_vel = rwd_specs["w_pos"], rwd_specs["w_rot"], rwd_specs["w_vel"], rwd_specs["w_ang_vel"]
 
@@ -1581,6 +1590,7 @@ def compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel
 
 @torch.jit.script
 def compute_point_goal_reward(prev_dist, curr_dist):
+    # type: (Tensor, Tensor) -> Tuple[Tensor, Tensor]
     reward = torch.clamp(prev_dist - curr_dist, max=1 / 3) * 9
 
     return reward, reward
@@ -1588,6 +1598,7 @@ def compute_point_goal_reward(prev_dist, curr_dist):
 
 @torch.jit.script
 def compute_location_reward(root_pos, tar_pos):
+    # type: (Tensor, Tensor) -> Tuple[Tensor, Tensor]
     pos_err_scale = 1.0
 
     pos_diff = tar_pos[..., 0:2] - root_pos[..., 0:2]
@@ -1602,6 +1613,7 @@ def compute_location_reward(root_pos, tar_pos):
 
 @torch.jit.script
 def compute_humanoid_im_reset(reset_buf, progress_buf, contact_buf, contact_body_ids, rigid_body_pos, ref_body_pos, pass_time, enable_early_termination, termination_distance, disableCollision, use_mean):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, bool, Tensor, bool, bool) -> Tuple[Tensor, Tensor]
     terminated = torch.zeros_like(reset_buf)
     if (enable_early_termination):
         if use_mean:
@@ -1632,6 +1644,8 @@ def compute_humanoid_im_reset(reset_buf, progress_buf, contact_buf, contact_body
 
 @torch.jit.script
 def compute_location_observations(root_pos, root_rot, target_pos, upright):
+    # type: (Tensor, Tensor, Tensor, bool) -> Tensor
+
     if not upright:
         root_rot = remove_base_rot(root_rot)
     heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
@@ -1654,6 +1668,7 @@ def compute_location_observations(root_pos, root_rot, target_pos, upright):
 
 @torch.jit.script
 def compute_humanoid_traj_reset(reset_buf, progress_buf, contact_buf, contact_body_ids, rigid_body_pos, pass_time, enable_early_termination, termination_heights, disableCollision):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor, float, bool) -> Tuple[Tensor, Tensor]
     terminated = torch.zeros_like(reset_buf)
 
     if (enable_early_termination):
