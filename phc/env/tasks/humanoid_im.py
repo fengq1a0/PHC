@@ -318,10 +318,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 # w, h = math.floor(w / 2.) * 2, math.floor(h / 2.) * 2
                 # rgb = rgb[:w, :h, :]
                 self._video_queue_o3d.append(rgb)
-                
-                
-                
-
+            
 
     def _load_motion(self, motion_train_file, motion_test_file=[]):
         assert (self._dof_offsets[-1] == self.num_dof)
@@ -483,13 +480,6 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         self.start_idx += self.num_envs
         self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=self.humanoid_shapes.cpu(), limb_weights=self.humanoid_limb_and_weights.cpu(), random_sample=False, start_idx=self.start_idx)
         self.reset()
-
-    # Disabled.
-    # def get_self_obs_size(self):
-    #     if self.obs_v == 4:
-    #         return self._num_self_obs * self.past_track_steps
-    #     else:
-    #         return self._num_self_obs
 
     def get_task_obs_size(self):
         obs_size = 0
