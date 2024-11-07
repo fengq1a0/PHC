@@ -33,6 +33,182 @@ from tqdm import tqdm
 import copy
 
 
+##########################################################################################################################################################
+#                                          Debug for rendering reward, Ugliest code
+##########################################################################################################################################################
+from smpl_sim.smpllib.smpl_joint_names import SMPL_BONE_ORDER_NAMES, SMPLX_BONE_ORDER_NAMES, SMPLH_BONE_ORDER_NAMES, SMPL_MUJOCO_NAMES, SMPLH_MUJOCO_NAMES
+
+import os
+import cv2
+import json
+import pickle
+from GART.tmp_solver import TGFitter
+from GART.lib_render.gauspl_renderer import render_cam_pcl
+from pytorch3d.transforms import matrix_to_axis_angle, axis_angle_to_matrix
+class FQ_RenderingReward():
+    def __init__(self, sequence_path, device, mujoco_2_smpl) -> None:
+        self.device = device
+        self.mujoco_2_smpl = mujoco_2_smpl
+        log_dir = "/home/fq/repo/PHC/GART/logs/people_1m/seq=Date01_Sub01_boxsmall_hand_prof=people_2m_data=behave/"
+        profile_fn = "/home/fq/repo/PHC/GART/logs/people_1m/seq=Date01_Sub01_boxsmall_hand_prof=people_2m_data=behave/people_2m.yaml"
+        smpl_path = "/home/fq/repo/PHC/data/smpl/SMPL_MALE.pkl"
+        #---------------------------------------
+        self.model = TGFitter(
+            log_dir=log_dir,
+            profile_fn=profile_fn,
+            mode="human",
+            template_model_path=smpl_path,
+            device=device,
+            FAST_TRAINING=True,
+        ).load_saved_model()
+        #---------------------------------------
+        t = 1
+        root = "/home/fq/data/behave/processed/%s/" % sequence_path
+        with open(os.path.join(root, "extri/%d/config.json" % t)) as json_file:
+                contents = json.load(json_file)
+                all_R = (np.array(contents["rotation"]).reshape((3,3)))
+                all_T = (np.array(contents["translation"]).reshape((3,1)))
+        with open(os.path.join(root, "intri/%d/calibration.json" % t)) as json_file:
+            contents = json.load(json_file)["color"]
+            all_K = (np.array([
+                [contents["fx"],              0, contents["cx"]],
+                [             0, contents["fy"], contents["cy"]],
+                [             0,              0,              1]
+            ]))
+            all_D = (np.array([
+                contents["k1"], 
+                contents["k2"], 
+                contents["p1"], 
+                contents["p2"], 
+                contents["k3"]
+            ]))
+        #---------------------------------------
+        self.H = 768 
+        self.W = 1024 
+        self.K = torch.from_numpy(all_K).to(device)
+        self.K[:2] = self.K[:2] * 0.5
+        
+        self.additional_dict = {'t': 0}
+        self.act_sph_order = 1
+        self.bg = [1.0, 1.0, 1.0]
+
+        self.every = 1
+        self.frame_length = 300
+        #---------------------------------------
+        self.imgs = {}
+        self.msks = {}
+        data_dir = root
+        a = sorted(os.listdir(os.path.join(data_dir,"img")))
+        for i in range(0, len(a), self.every):
+            img = cv2.imread(os.path.join(data_dir, "img", a[i], "k1.color.jpg"))[:,:,::-1]
+            H, W, _ = img.shape
+            img = cv2.resize(img, (W//2, H//2), interpolation=cv2.INTER_AREA)
+            msk = cv2.imread(os.path.join(data_dir, "img", a[i], "k1.person_mask.png"), -1)
+            msk = cv2.resize(msk, (W//2, H//2), interpolation=cv2.INTER_NEAREST)
+
+            img = torch.from_numpy(img).permute(2,0,1).to(device) / 255
+            msk = torch.from_numpy(msk)[None].to(device) > 127.5
+            
+            self.imgs["%05d" % i] = img # 0 - 1 
+            self.msks["%05d" % i] = msk # bool
+        #----------------------------------------
+
+        self.pre_rot = sRot.from_quat([0.5, 0.5, 0.5, 0.5])
+
+        self.RRRR = torch.from_numpy(np.array([[1.0,  0.0,  0.0],
+                                               [0.0,  0.0, -1.0], 
+                                               [0.0,  1.0,  0.0]], dtype=np.float32)).to(device)
+
+        # GMM here
+        #with open("/home/fq/repo/HOI-Phys-zhanglb/physhoi/data/gmm_08.pkl", "rb") as f:
+        #    self.gmm = pickle.load(f, encoding="latin1")
+
+        #fourcc = cv2.VideoWriter_fourcc(*'XVID')  # 'XVID' 是常见的编码格式
+        #self.video_GT = cv2.VideoWriter("debug_gt.mp4", fourcc, 1.0, (1024, 768))  # 30.0 是帧率，你可以调整
+        #self.video_PR = cv2.VideoWriter("debug_pr.mp4", fourcc, 1.0, (1024, 768))  # 30.0 是帧率，你可以调整
+        #self.video_ER = cv2.VideoWriter("debug_er.mp4", fourcc, 1.0, (1024, 768))  # 30.0 是帧率，你可以调整
+        #self.cnt = 0
+
+    @torch.no_grad()
+    def compute_reward(self, frame_id, pose, trans, skeleton_trees):
+        with torch.no_grad():
+            # fff = True
+            reward = torch.zeros((trans.shape[0],), device=trans.device)
+            frame_id_numpy = frame_id.cpu().numpy()
+            for i in range(frame_id_numpy.shape[0]):
+                if frame_id_numpy[i]>=self.frame_length or frame_id_numpy[i]<0 or frame_id_numpy[i]%self.every!=0:
+                    continue
+                ##################################################################
+                # recover pose/trans to smpl pose and trans
+                ##################################################################
+                body_quat = pose[i]
+                root_trans = trans[i]
+                root_trans[-1] += -1.3758
+
+
+                # print(body_quat.shape, root_trans.shape)
+                # torch.Size([24, 4]) torch.Size([3])
+                offset = skeleton_trees[i].local_translation[0].cuda()
+                root_trans_offset = root_trans - offset
+                root_trans_offset = root_trans_offset.cuda()[None]
+                root_trans_offset = torch.matmul(root_trans_offset, self.RRRR.T)
+
+                pose_quat = (sRot.from_quat(body_quat.reshape(-1, 4).numpy()) * self.pre_rot).as_quat().reshape(24, 4)
+                new_sk_state = SkeletonState.from_rotation_and_root_translation(skeleton_trees[i], torch.from_numpy(pose_quat), root_trans.cpu(), is_local=False)
+                local_rot = new_sk_state.local_rotation
+                pose_aa = sRot.from_quat(local_rot.reshape(-1, 4).numpy()).as_rotvec().reshape(24, 3)
+                pose_aa = torch.from_numpy(pose_aa[self.mujoco_2_smpl, :].reshape(24, -1)).cuda().float()
+
+                tmp = axis_angle_to_matrix(pose_aa[0:1])
+                tmp = torch.matmul(self.RRRR, tmp)
+                tmp = matrix_to_axis_angle(tmp)
+                pose_aa[0:1] = tmp
+                pose_aa = pose_aa[None]
+
+                mu, fr, sc, op, sph, _ = self.model(pose_aa, root_trans_offset, 
+                    additional_dict=self.additional_dict, active_sph_order=self.act_sph_order)
+                render_pkg = render_cam_pcl(
+                    mu[0], fr[0], sc[0], op[0], sph[0], self.H, self.W, self.K, False, self.act_sph_order, self.bg
+                )
+                gt_rgb = self.imgs["%05d"%frame_id_numpy[i]]
+                gt_msk = self.msks["%05d"%frame_id_numpy[i]]
+                reward[i] = torch.nn.functional.mse_loss(
+                    torch.masked_select(render_pkg["rgb"][None], gt_msk[None]),
+                    torch.masked_select(gt_rgb[None], gt_msk[None]),
+                )
+#                if fff:
+#                    tmp = (render_pkg["rgb"]*255).cpu().permute(1,2,0).numpy()[:,:,::-1]
+#                    cv2.imwrite("debug_pr.png", tmp)
+#                if fff:
+#                    if self.cnt >= 30:
+#                        self.video_GT.release()
+#                        self.video_PR.release()
+#                        self.video_ER.release()
+#                        exit()
+#                    tmp = (render_pkg["rgb"][None]-gt_rgb[None]) * gt_msk[None]
+#                    tmp = (tmp*tmp).sum(dim=1)[0].cpu().numpy() * 255
+#                    tmp = tmp[:,:,None].astype(np.uint8)
+#                    heatmap = cv2.applyColorMap(tmp, cv2.COLORMAP_JET)
+#                    cv2.imwrite('heatmap.png', heatmap)
+#
+#                    self.video_ER.write(heatmap.astype(np.uint8))
+#
+#                    tmp = (gt_rgb*255).cpu().permute(1,2,0).numpy()[:,:,::-1]
+#                    cv2.imwrite("debug_gt.png", tmp)
+#                    self.video_GT.write(tmp.astype(np.uint8))
+#
+#                    tmp = (render_pkg["rgb"]*255).cpu().permute(1,2,0).numpy()[:,:,::-1]
+#                    cv2.imwrite("debug_pr.png", tmp)
+#                    self.video_PR.write(tmp.astype(np.uint8))
+#
+#                    self.cnt+=1
+#                    fff = False
+#
+            return reward
+
+
+##########################################################################################################################
+
 
 class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
 
@@ -59,10 +235,19 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         self.reward_specs = cfg["env"].get("reward_specs", {"k_pos": 100, "k_rot": 10, "k_vel": 0.1, "k_ang_vel": 0.1, "w_pos": 0.5, "w_rot": 0.3, "w_vel": 0.1, "w_ang_vel": 0.1})
 
         if flags.position_only or flags.pos_2d_only:
-            self.reward_specs["w_pos"] = 0.5      # 0.5
+            self.reward_specs["w_pos"] = 1      # 0.5
             self.reward_specs["w_rot"] = 0      # 0.3
             self.reward_specs["w_vel"] = 0      # 0.1
             self.reward_specs["w_ang_vel"] = 0  # 0.1
+        
+        if flags.finetune_wRR:
+            self.reward_specs["w_pos"] *= 0.75      
+            self.reward_specs["w_rot"] *= 0.75  
+            self.reward_specs["w_vel"] *= 0.75  
+            self.reward_specs["w_ang_vel"] *= 0.75  
+        
+            self.reward_specs["k_rr"] = 10
+            self.reward_specs["w_rr"] = 0.25
 
         self._num_joints = len(self._body_names)
         self.device = "cpu"
@@ -128,6 +313,16 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         self.vis_contact = False
         self._sampled_motion_ids = torch.arange(self.num_envs).to(self.device)
         self.create_o3d_viewer()
+
+        # FQ: the render for rendering reward
+        # TODO: change boxmedium to flags
+        #############################################################################
+        if self.humanoid_type == "smpl":
+            mujoco_2_smpl = [self._body_names_orig.index(q) for q in SMPL_BONE_ORDER_NAMES if q in self._body_names_orig]
+        elif self.humanoid_type in ["smplh", "smplx"]:
+            mujoco_2_smpl = [self._body_names_orig.index(q) for q in SMPLH_BONE_ORDER_NAMES if q in self._body_names_orig]
+        self.FQ_render = FQ_RenderingReward("Date01_Sub01_boxmedium_hand", self.device, mujoco_2_smpl)
+        #############################################################################
         return
     
     
@@ -948,6 +1143,12 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             self.rew_buf[:] += power_reward
             self.reward_raw = torch.cat([self.reward_raw, power_reward[:, None]], dim=-1)
         
+        if flags.finetune_wRR:
+            frame_id = torch.round(motion_times / self.dt).int()
+            render_reward = self.FQ_render.compute_reward(frame_id, copy.deepcopy(body_rot), copy.deepcopy(root_pos), copy.deepcopy(self.skeleton_trees))
+            render_reward = torch.exp(-self.reward_specs["k_rr"] * render_reward)
+            self.rew_buf[:] += self.reward_specs["w_rr"] * render_reward
+            self.reward_raw = torch.cat([self.reward_raw, render_reward[:, None]], dim=-1)
         return
     
     def _reset_envs(self, env_ids):
