@@ -250,9 +250,6 @@ class AMPAgent(common_agent.CommonAgent):
             
             self.obs = self.env_reset(done_indices)
             
-            # self.rnn_states[0][:, :, -1] = n; print('debugg!!!!')
-            # self.rnn_states[0][:, :, -2] = torch.arange(self.num_actors)
-            
             seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)  # this should upate mb_rnn_states
             if full_tensor:
                 break
@@ -388,7 +385,6 @@ class AMPAgent(common_agent.CommonAgent):
 
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
-            
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
                 
             shaped_rewards = self.rewards_shaper(rewards)

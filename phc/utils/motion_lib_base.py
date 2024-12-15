@@ -118,7 +118,14 @@ class MotionLibBase():
         self._device = self.m_cfg.device
         
         self.mesh_parsers = None
-        
+
+        ##############################
+        # TODO: FQ load FQ data here.
+        self.FQ_data = {
+
+        }
+        ##############################
+
         self.load_data(self.m_cfg.motion_file,  min_length = self.m_cfg.min_length, im_eval = self.m_cfg.im_eval)
         self.setup_constants(fix_height = self.m_cfg.fix_height,  multi_thread = self.m_cfg.multi_thread)
 
@@ -253,7 +260,8 @@ class MotionLibBase():
             res_acc.update(res)
 
         for f in tqdm(range(len(res_acc))):
-            motion_file_data, curr_motion = res_acc[f]
+            # TODO: FQ info
+            motion_file_data, curr_motion, FQ_info = res_acc[f]
             if USE_CACHE:
                 curr_motion = DeviceCache(curr_motion, self._device)
 
@@ -515,6 +523,7 @@ class MotionLibBase():
             "body_ang_vel": body_ang_vel,
             "motion_bodies": self._motion_bodies[motion_ids],
             "motion_limb_weights": self._motion_limb_weights[motion_ids],
+            "FQ_info": self.FQ_data[f0l]
         }
 
     def get_root_pos_smpl(self, motion_ids, motion_times):

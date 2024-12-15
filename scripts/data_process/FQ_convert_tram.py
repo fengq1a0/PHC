@@ -43,50 +43,63 @@ if __name__ == "__main__":
         }
     smpl_local_robot = LocalRobot(robot_cfg,)
     #------------------------------------------------------
-    base_path = "/home/fq/data/behave/processed/"
-    WHAM_path = "/home/fq/repo/WHAM/output/demo/"
+    base_path = "/home/fq/repo/tram/results/"
     name_list = [
         "Date01_Sub01_boxsmall_hand",
     ]
-    R = np.array([[1.0,  0.0, 0.0],
-                  [0.0,  0.0, 1.0], 
-                  [0.0, -1.0, 0.0]])
-    
-    use_wham = True
     #------------------------------------------------------
     behave_full_motion_dict = {}
 
 
     for name in tqdm(name_list):
         data_path = os.path.join(base_path, name)
-        smpl_motion = np.load(os.path.join(data_path, "smpl_fit_all.npz"))
-        object_motion = np.load(os.path.join(data_path, "object_fit_all.npz"))
+        smpl_motion = np.load(os.path.join(data_path, "export", "camera_space.npy"),allow_pickle=True)
+        w2c = np.load(os.path.join(data_path, "export", "w2c.npz"))
 
-        bound = 300           # number of frames to use.
+        bound = 150           # number of frames to use.
         framerate = 30        # framerate of the sequence.
+        
 
         skip = int(framerate/30)
-        root_trans = smpl_motion['trans'][::skip, :].astype(np.float64)
-        pose_aa = np.concatenate([smpl_motion['poses'][::skip, :66], np.zeros((root_trans.shape[0], 6))], axis = -1)#smpl_motion['poses'][::skip, :]#
 
-        if use_wham:
-            tmp = joblib.load(os.path.join(WHAM_path, name, "wham_output.pkl"))[0]
-            tmp_pose = tmp["pose"][::skip, 3: 72]
-            pose_aa[:,3:] = tmp_pose[:pose_aa.shape[0],:]
+        smpl_param = smpl_motion[::skip]
+        bound = min(bound, len(smpl_param))
+        smpl_param = smpl_param[:bound]
+
+
+        R = np.array([[1.0,  0.0,  0.0],
+                      [0.0,  0.0,  1.0], 
+                      [0.0,  -1.0,  0.0]])
+
+        w2c_R = w2c["R"][::skip][:bound] @ R # 150 3 3
+        w2c_T = w2c["T"][::skip][:bound] # 150 3
+        c2w_R = w2c_R.transpose((0,2,1))
+
+
+        root_trans = []
+        pred_rotmat = []
+        pred_shape = []
+        for param in smpl_param:
+            root_trans.append(param['root_trans'].numpy().astype(np.float64))
+            pred_rotmat.append(param['pred_rotmat'].numpy().astype(np.float64))
+            pred_shape.append(param['pred_shape'].numpy().astype(np.float64))
+        root_trans = np.array(root_trans)
+        pred_rotmat = np.array(pred_rotmat)
+        pred_shape = np.array(pred_shape)
         #-------------------camera to world-------------------------
         # camera coordinate to ...
-        rot_mat = sRot.from_rotvec(pose_aa[:,0:3]).as_matrix()
-        rot_mat = np.matmul(R, rot_mat)
-        pose_aa[:, 0:3] =  sRot.from_matrix(rot_mat).as_rotvec()
-        # also root trans!
-        root_trans = root_trans @ R.T
+
+    
+        root_trans = root_trans - w2c_T
+        root_trans = np.matmul(c2w_R, root_trans[:,:,None])[:,:,0]
+        pred_rotmat[:,0,:,:] = np.matmul(c2w_R,
+                                         pred_rotmat[:,0,:,:])
+
+        pose_aa =  sRot.from_matrix(pred_rotmat.reshape(bound*24, 3, 3)).as_rotvec().reshape(bound, 24, 3)
         #-----------------------------------------------------------
 
 
-        bound = min(bound, root_trans.shape[0])
         N = bound
-        root_trans = root_trans[:bound]
-        pose_aa = pose_aa[:bound]
     
         smplh_2_mujoco = [SMPLH_BONE_ORDER_NAMES.index(q) for q in SMPLH_MUJOCO_NAMES if q in SMPLH_BONE_ORDER_NAMES]
         smpl_2_mujoco = [SMPL_BONE_ORDER_NAMES.index(q) for q in SMPL_MUJOCO_NAMES if q in SMPL_BONE_ORDER_NAMES]
@@ -94,8 +107,8 @@ if __name__ == "__main__":
         pose_quat = sRot.from_rotvec(pose_aa_mj.reshape(-1, 3)).as_quat().reshape(N, 24, 4)
 
         # always use zero shape and neutral model here
-        beta = np.zeros((16))
-        gender_number, beta[:], gender = [0], 0, "neutral"
+        beta = pred_shape[0]
+        gender_number, gender = [0], "neutral"
         smpl_local_robot.load_from_skeleton(betas=torch.from_numpy(beta[None,]), gender=gender_number, objs_info=None)
         smpl_local_robot.write_xml(f"phc/data/assets/mjcf/{robot_cfg['model']}_humanoid.xml")
         skeleton_tree = SkeletonTree.from_mjcf(f"phc/data/assets/mjcf/{robot_cfg['model']}_humanoid.xml")
@@ -128,8 +141,9 @@ if __name__ == "__main__":
         new_motion_out['fps'] = fps
         behave_full_motion_dict[name] = new_motion_out
 
-os.makedirs("data/behave", exist_ok=True)
-if upright_start:
-    joblib.dump(behave_full_motion_dict, "data/behave/Date01_Sub01_boxsmall_hand_wham.pkl", compress=True)
-else:
-    joblib.dump(behave_full_motion_dict, "data/behave/behave_take0_take6.pkl", compress=True)
+os.makedirs("data/tram", exist_ok=True)
+joblib.dump(behave_full_motion_dict, "data/tram/%s.pkl" % name_list[0], compress=True)
+#if upright_start:
+#    joblib.dump(behave_full_motion_dict, "data/behave/Date01_Sub01_boxsmall_hand_wham.pkl", compress=True)
+#else:
+#    joblib.dump(behave_full_motion_dict, "data/behave/behave_take0_take6.pkl", compress=True)

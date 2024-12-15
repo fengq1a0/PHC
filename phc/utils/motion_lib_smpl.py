@@ -116,6 +116,9 @@ class MotionLibSMPL(MotionLibBase):
         for f in pbar:
             curr_id = ids[f]  # id for this datasample
             curr_file = motion_data_list[f]
+            # TODO: FQ
+            curr_FQ_file =  None
+
             if not isinstance(curr_file, dict) and osp.isfile(curr_file):
                 key = motion_data_list[f].split("/")[-1].split(".")[0]
                 curr_file = joblib.load(curr_file)[key]
@@ -136,7 +139,7 @@ class MotionLibSMPL(MotionLibBase):
             B, J, N = pose_quat_global.shape
 
             ##### ZL: randomize the heading ######
-            if (not flags.im_eval) and (not flags.test) and (not flags.finetune_wRR):
+            if (not flags.im_eval) and (not flags.test) and (not flags.finetune_wRR) and False:
                 # if True:
                 random_rot = np.zeros(3)
                 random_rot[2] = np.pi * (2 * np.random.random() - 1.0)
@@ -156,6 +159,7 @@ class MotionLibSMPL(MotionLibBase):
 
             curr_motion = SkeletonMotion.from_skeleton_state(sk_state, curr_file.get("fps", 30))
             curr_dof_vels = compute_motion_dof_vels(curr_motion)
+
             
             if flags.real_traj:
                 quest_sensor_data = to_torch(curr_file['quest_sensor_data'])
@@ -171,10 +175,13 @@ class MotionLibSMPL(MotionLibBase):
 
             curr_motion.dof_vels = curr_dof_vels
             curr_motion.gender_beta = curr_gender_beta
-            res[curr_id] = (curr_file, curr_motion)
-            
-            
-
+            #TODO: FQ, I need these data.##
+            FQ_dict = {
+                "tmp" : "xx",
+                "xxx" : "xx",
+            }
+            ###############################
+            res[curr_id] = (curr_file, curr_motion, FQ_dict)
         if not queue is None:
             queue.put(res)
         else:
