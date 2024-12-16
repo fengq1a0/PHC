@@ -1,3 +1,14 @@
+# Data format
+merge into original pkl
+img = [L, 1024]
+bbox = [L, 3] cx, cy, b
+kp2d = [L, 34]
+camera: 
+R    = [L, 9]
+vfov = [L, 1]
+
+10+1024+37 = 1071
+
 # Set up the environment
 
 

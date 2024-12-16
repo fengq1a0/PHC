@@ -11,7 +11,7 @@ enable_debug_vis: False
 
 fut_tracks: False
 self_obs_v: 1
-obs_v: 6
+obs_v: 66
 auto_pmcp: False
 auto_pmcp_soft: True
 

@@ -116,8 +116,6 @@ class MotionLibSMPL(MotionLibBase):
         for f in pbar:
             curr_id = ids[f]  # id for this datasample
             curr_file = motion_data_list[f]
-            # TODO: FQ
-            curr_FQ_file =  None
 
             if not isinstance(curr_file, dict) and osp.isfile(curr_file):
                 key = motion_data_list[f].split("/")[-1].split(".")[0]
@@ -175,13 +173,18 @@ class MotionLibSMPL(MotionLibBase):
 
             curr_motion.dof_vels = curr_dof_vels
             curr_motion.gender_beta = curr_gender_beta
-            #TODO: FQ, I need these data.##
-            FQ_dict = {
-                "tmp" : "xx",
-                "xxx" : "xx",
-            }
+            ##########FQ_info: step 0 ##############
+            FQ_feat = []
+            for kk in ["img_feat", "bbox", "kp2d", "R", "vfov"]:
+                # img_feat: 1024
+                # bbox:     3
+                # kp2d:     34
+                # R:        9
+                # vfov:     1
+                FQ_feat.append(curr_file[kk])
+            FQ_feat = torch.from_numpy(np.concatenate(FQ_feat, axis=1)).float()
             ###############################
-            res[curr_id] = (curr_file, curr_motion, FQ_dict)
+            res[curr_id] = (curr_file, curr_motion, FQ_feat)
         if not queue is None:
             queue.put(res)
         else:
