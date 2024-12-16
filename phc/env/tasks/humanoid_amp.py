@@ -329,6 +329,8 @@ class HumanoidAMP(Humanoid):
         return
 
     def _load_motion(self, motion_train_file, motion_test_file=[]):
+        raise NotImplementedError("You shouldn't get to your father! QAQ")
+        '''
         assert (self._dof_offsets[-1] == self.num_dof)
         if self.humanoid_type in ["smpl", "smplh", "smplx"]:
             motion_lib_cfg = EasyDict({
@@ -372,6 +374,7 @@ class HumanoidAMP(Humanoid):
             self._motion_lib = MotionLib(motion_file=motion_file, dof_body_ids=self._dof_body_ids, dof_offsets=self._dof_offsets, key_body_ids=self._key_body_ids.cpu().numpy(), device=self.device)
 
         return
+        '''
 
     def _reset_envs(self, env_ids):
         self._reset_default_env_ids = []
