@@ -747,7 +747,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 obs_size = len(self._track_bodies) * self._num_traj_samples * 24
                 obs_size -= (len(self._track_bodies) - 1) * self._num_traj_samples * 6
             elif self.obs_v == 66:
-                obs_size = 1071
+                obs_size = 1024 + 3 + 23*3 +16
             else:
                 raise NotImplementedError("No such observation")
 

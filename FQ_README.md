@@ -48,3 +48,8 @@ in __init__.py
 # data
 data/amass_smpl/train.pkl
 data/behave/*
+
+
+# Now:
+
+No AMP for now
