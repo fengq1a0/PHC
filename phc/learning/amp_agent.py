@@ -464,7 +464,7 @@ class AMPAgent(common_agent.CommonAgent):
         return
 
     def train_epoch(self):
-        self.pre_epoch(self.epoch_num)
+        self.pre_epoch(self.epoch_num)      # FQ: update weight for discriminator,   And freeze running mean/std
         play_time_start = time.time()
 
         ### ZL: do not update state weights during play
