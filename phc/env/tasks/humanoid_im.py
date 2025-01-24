@@ -747,7 +747,13 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 obs_size = len(self._track_bodies) * self._num_traj_samples * 24
                 obs_size -= (len(self._track_bodies) - 1) * self._num_traj_samples * 6
             elif self.obs_v == 66:
-                obs_size = 1024 + 3 #+ 23*3 +16
+                obs_size = 512 + 9 #1024 + 3 + 10 + 9 #+ 23*3 +16
+            elif self.obs_v == 767:
+                obs_size = 6 * 24 + 3
+            elif self.obs_v == 88:
+                obs_size = 9 * 24 # 3 position + 6 rotation
+            elif self.obs_v == 999:
+                obs_size = 6 * 24 + 3 + 9 # Add 6 rotation and 3 position  
             else:
                 raise NotImplementedError("No such observation")
 
@@ -1012,7 +1018,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             obs = compute_imitation_observations_v2(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, dof_pos_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, ref_dof_pos_subset, time_steps, self._has_upright_start)
         elif self.obs_v == 3:
             obs = compute_imitation_observations_v3(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
-        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66:
+        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66 or self.obs_v == 767 or self.obs_v == 88 or self.obs_v == 999:
 
             if self.zero_out_far:
                 close_distance = self.close_distance
@@ -1042,7 +1048,15 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 
                 # obs[:, -1] = env_ids.clone().float(); print('debugging')
                 # obs[:, -2] = self.progress_buf[env_ids].clone().float(); print('debugging')
+            elif self.obs_v == 767:
+                obs = compute_imitation_observations_v767(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
                 
+            elif self.obs_v == 88:
+                obs = compute_imitation_observations_v88(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+            
+            elif self.obs_v == 999:
+                obs = compute_imitation_observations_v999(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+            
             elif self.obs_v == 5:
                 obs = compute_imitation_observations_v6(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
                 one_hots = self._motion_lib.one_hot_motions[env_ids]
@@ -1055,8 +1069,11 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 ref_root_ang_vel_subset =ref_body_ang_vel_subset[:, 0]
                 obs = compute_imitation_observations_v9(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_root_vel_subset, ref_root_ang_vel_subset, time_steps, self._has_upright_start)
             elif self.obs_v == 66:
-                #obs = compute_imitation_observations_v6(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
-                obs = motion_res["FQ_feat"]
+                obs = compute_imitation_observations_v66(
+                    motion_res["FQ_feat"],
+                    root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, 
+                    body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, 
+                    ref_body_ang_vel_subset, time_steps, self._has_upright_start)
             else:
                 raise NotImplementedError("No such observerion")
 
@@ -1602,6 +1619,134 @@ def compute_imitation_observations_v6(root_pos, root_rot, body_pos, body_rot, bo
     obs.append(diff_local_ang_vel.view(B, time_steps, -1))  # timestep  * 24 * 3
     obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * 24 * 3
     obs.append(local_ref_body_rot.view(B, time_steps, -1))  # timestep  * 24 * 6
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+
+@torch.jit.script
+def compute_imitation_observations_v767(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_rot = torch_utils.calc_heading_quat(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+    local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
+    local_ref_body_pos = local_ref_body_pos.view(B, time_steps, J, 3)[:,:,0:1,:]
+
+    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+    
+
+    # make some changes to how futures are appended.
+    obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * 24 * 3
+    obs.append(local_ref_body_rot.view(B, time_steps, -1))  # timestep  * 24 * 6
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+
+@torch.jit.script
+def compute_imitation_observations_v88(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+    obs = []
+    B, J, _ = body_pos.shape
+
+#    if not upright:
+#        root_rot = remove_base_rot(root_rot)
+#
+#    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+#    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+#    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+#    local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
+#
+#    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+#    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+
+    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3)
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(ref_body_rot.view(-1, 4))
+
+    # make some changes to how futures are appended.
+    obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * 24 * 3
+    obs.append(local_ref_body_rot.view(B, time_steps, -1))  # timestep  * 24 * 6
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+@torch.jit.script
+def compute_imitation_observations_v999(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+#    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+#    local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
+#
+#    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+#    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+
+    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3)[:,:,0:1,:]
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(ref_body_rot.view(-1, 4))
+
+    # make some changes to how futures are appended.
+    obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * 24 * 3
+    obs.append(local_ref_body_rot.view(B, time_steps, -1))  # timestep  * 24 * 6
+    obs.append(root_pos.view(B, time_steps,  3))
+    obs.append(torch_utils.quat_to_tan_norm(root_rot.view(-1,4)).view(B, time_steps, 6))
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+@torch.jit.script
+def compute_imitation_observations_v66(feature, root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+    local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
+    local_ref_body_pos = local_ref_body_pos.view(B, time_steps, J, 3)[:,:,0:1,:]
+
+    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+    local_ref_body_rot = local_ref_body_rot.view(B, time_steps, J, 6)[:,:,0:1,:]
+
+    # make some changes to how futures are appended.
+    obs.append(feature.view(B, time_steps, -1))  # timestep  * 24 * 6
+    obs.append(local_ref_body_pos.view(B, time_steps, 3))
+    obs.append(local_ref_body_rot.view(B, time_steps, 6))
 
     obs = torch.cat(obs, dim=-1).view(B, -1)
     return obs

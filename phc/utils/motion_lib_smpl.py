@@ -176,7 +176,7 @@ class MotionLibSMPL(MotionLibBase):
             ##########FQ_info: step 0 ##############
             FQ_feat = torch.zeros(1240)
             FQ_feat = []
-            for kk in ["img_feat", "bbox"]: # , "kp2d", "T_c2g"
+            for kk in ["img_feat"]: # , "kp2d", "bbox", "T_c2g", "poses_g"
                 # img_feat: 1024
                 # bbox:     3
                 # kp2d:     23*3

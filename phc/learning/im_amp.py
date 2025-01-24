@@ -237,7 +237,7 @@ class IMAmpAgent(amp_agent.AMPAgent):
         torch.cuda.empty_cache()
         gc.collect()
         
-        self.update_training_data(info['failed_keys'])
+        # self.update_training_data(info['failed_keys'])
         del self.terminate_state, self.terminate_memory, self.mpjpe, self.mpjpe_all
         return info["eval_info"]
 

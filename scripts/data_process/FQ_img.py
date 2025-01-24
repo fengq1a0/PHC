@@ -21,7 +21,8 @@ from smplx import SMPL
 
 
 if __name__ == "__main__":
-    debug_data = False
+    model_head = torch.jit.load("/home/fq/repo/4D-Humans/hmr2_head.pt")
+    debug_data = True
     #----------------------------------------------------
     process_split = "train"
     upright_start = True
@@ -48,12 +49,18 @@ if __name__ == "__main__":
     smpl_local_robot = LocalRobot(robot_cfg,)
     #------------------------------------------------------
     base_path = "/home/fq/data/behave/processed/"
-    with open("/home/fq/data/behave/scripts/data_list.txt", "r") as fi:
-        name_list = fi.read().split()# [:30]
+    if process_split == "train":
+        with open("/home/fq/data/behave/scripts/data_list_train.txt", "r") as fi:
+            name_list = fi.read().split()
+    else:
+        with open("/home/fq/data/behave/scripts/data_list_test.txt", "r") as fi:
+            name_list = fi.read().split()
     if debug_data:
-        name_list = [
-            "Date01_Sub01_boxsmall_hand",
-        ]
+        name_list = name_list[:16]
+
+
+
+
     ground_normals = np.load("/home/fq/data/behave/grounds/planes.npy")
     smpl = SMPL(model_path="/home/fq/repo/PHC/data/smpl/", gender="neutral")
     smpl_2_mujoco = [SMPL_BONE_ORDER_NAMES.index(q) for q in SMPL_MUJOCO_NAMES if q in SMPL_BONE_ORDER_NAMES]
@@ -69,9 +76,9 @@ if __name__ == "__main__":
         poses = smpl_motion['poses'].astype(np.float64)
         betas = smpl_motion['betas'].astype(np.float64)
         if debug_data:
-            trans = smpl_motion['trans'].astype(np.float64)[:150]
-            poses = smpl_motion['poses'].astype(np.float64)[:150]
-            betas = smpl_motion['betas'].astype(np.float64)[:150]
+            trans = smpl_motion['trans'].astype(np.float64)#[:150]
+            poses = smpl_motion['poses'].astype(np.float64)#[:150]
+            betas = smpl_motion['betas'].astype(np.float64)#[:150]
 
         with torch.no_grad():
             j0 = smpl(
@@ -94,12 +101,8 @@ if __name__ == "__main__":
                          [ 0.0,  0.0, -1.0, 0], 
                          [ 0.0,  1.0,  0.0, 0],
                          [   0,    0,    0, 1]])
-        
-        if debug_data:
-            views = [1]
-        else:
-            views = [0, 1, 2, 3]
-        for i in views:
+
+        for i in [0, 1, 2, 3]:
             #########################################################################################################
             # For FQ features
             with open(os.path.join(data_path, "intri/%d/calibration.json" % i), "r") as tmp:
@@ -121,6 +124,9 @@ if __name__ == "__main__":
             kp2d[:,:,0] = (kp2d[:,:,0]-cx) / fx *2.8
             kp2d[:,:,1] = (kp2d[:,:,1]-cy) / fy *2.8
             img_feat = image_feature["img_feat"]
+            with torch.no_grad():
+                TRAM_pose, TRAM_shape = model_head(torch.from_numpy(img_feat).to("cuda:0"))
+                TRAM = torch.cat([TRAM_pose, TRAM_shape],dim=1).cpu().numpy()
             #########################################################################################################
             # For T_m2c, T_c2g
             with open(os.path.join(data_path, "extri/%d/config.json" % i), "r") as tmp:
@@ -145,6 +151,10 @@ if __name__ == "__main__":
             T_c2g = np.eye(4)
             T_c2g[:3,:3] = R_c2g
             T_c2g[1,3] = - p_g[1]
+
+            T_c2g_feature = np.zeros(10,dtype=np.float32)
+            T_c2g_feature[:9] = R_c2g.reshape(9)
+            T_c2g_feature[9] = - p_g[1]
             #########################################################################################################
             # For isaac gym:
             # poses_isaac, trans_isaac, betas
@@ -200,9 +210,9 @@ if __name__ == "__main__":
             new_motion_out['root_trans_offset'] = root_trans_offset
             new_motion_out['pose_aa'] = poses_isaac
             # FQ features
-            new_motion_out['T_c2g'] = np.tile(T_c2g.reshape(1,16), (N,1))
-            new_motion_out["kp2d"] = kp2d[:N].reshape(N,23*3)
-            new_motion_out["bbox"] = bbox[:N]
+            new_motion_out['T_c2g'] = np.tile(T_c2g_feature[None], (N,1))   # R + height
+            new_motion_out["kp2d"] = kp2d[:N].reshape(N,23*3)               # 17 + 6 (two feet)     # Need to be regulized
+            new_motion_out["bbox"] = bbox[:N]                                                       # Need to be regulized
             new_motion_out["img_feat"] = img_feat[:N]
             # additional
             new_motion_out['fps']     = 30
@@ -210,6 +220,8 @@ if __name__ == "__main__":
             new_motion_out['betas']   = betas
             new_motion_out['poses_g'] = poses_g
             new_motion_out['trans_g'] = trans_g
+
+            new_motion_out["TRAM"]    = TRAM[:N]
             
 
             behave_full_motion_dict[name+"_%d" % i] = new_motion_out
@@ -218,5 +230,7 @@ os.makedirs("data/behave_ground", exist_ok=True)
 if upright_start:
     if debug_data:
         joblib.dump(behave_full_motion_dict, "data/behave_ground/behave_debug.pkl", compress=True)
+    elif process_split == "train":
+        joblib.dump(behave_full_motion_dict, "data/behave_ground/behave_train.pkl", compress=True)
     else:
-        joblib.dump(behave_full_motion_dict, "data/behave_ground/behave.pkl", compress=True)
+        joblib.dump(behave_full_motion_dict, "data/behave_ground/behave_test.pkl", compress=True)

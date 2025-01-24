@@ -60,6 +60,7 @@ class AMPBuilder(network_builder.A2CBuilder):
     class Network(network_builder.A2CBuilder.Network):
 
         def __init__(self, params, **kwargs):
+            # FQ_HACK
             super().__init__(params, **kwargs)
 
             if self.is_continuous:

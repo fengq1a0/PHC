@@ -14,7 +14,6 @@ from collections import defaultdict
 if __name__ == "__main__":
     add_action_noise = True
     action_noise_std = 0.05
-    # dataset_path = "/hdd/zen/dev/meta/EgoQuest/data/amass/pkls/amass_isaac_im_train_take6_upright_slim.pkl"
     dataset_path = "/hdd/zen/dev/meta/EgoQuest/data/amass/pkls/amass_isaac_run_upright_slim.pkl"
     motion_file_name = dataset_path.split("/")[-1].split(".")[0]
     exp_name = "phc_comp_3"

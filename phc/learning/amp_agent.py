@@ -996,8 +996,10 @@ class AMPAgent(common_agent.CommonAgent):
         #     train_info_dict["success_rate"] =  1 - torch.mean((train_info['terminated_flags'] > 0).float()).item()
         
         if "reward_raw" in train_info:
+            # TODO: FQ hack
+            reward_name = ["position", "rotation", "vel", "ang_vel", "power"]
             for idx, v in enumerate(train_info['reward_raw'].cpu().numpy().tolist()):
-                train_info_dict[f"ind_reward.{idx}"] =  v
+                train_info_dict["%s_reward" % reward_name[idx]] =  v
         
         if "sym_loss" in train_info:
             train_info_dict['sym_loss'] = torch_ext.mean_list(train_info['sym_loss']).item()
