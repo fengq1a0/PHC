@@ -22,7 +22,8 @@ from smplx import SMPL
 
 if __name__ == "__main__":
     #----------------------------------------------------
-    process_split = "train"
+    small_mode = False
+    process_split = "test"
     upright_start = True
     robot_cfg = {
             "mesh": False,
@@ -53,24 +54,24 @@ if __name__ == "__main__":
     name_list = []
     if process_split == "train":
         for name in train_list:
-            name_list += sorted(glob.glob(os.path.join(base_path, "fitted_smpl", name, "*")))
+            name_list += sorted(glob.glob(os.path.join(base_path, "gvhmr", name, "*")))
     elif process_split == "test":
         for name in test_list:
-            name_list += sorted(glob.glob(os.path.join(base_path, "fitted_smpl", name, "*")))   
+            name_list += sorted(glob.glob(os.path.join(base_path, "gvhmr", name, "*")))[::4]   
 
     smpl = SMPL(model_path="/home/fq/repo/PHC/data/smpl/", gender="neutral")
     smpl_2_mujoco = [SMPL_BONE_ORDER_NAMES.index(q) for q in SMPL_MUJOCO_NAMES if q in SMPL_BONE_ORDER_NAMES]
     #------------------------------------------------------
     behave_full_motion_dict = {}
     for name in tqdm(name_list):
-        smpl_motion = np.load(os.path.join(name, "smpl_param.npz"))
+        smpl_motion = np.load(os.path.join(name[:-9].replace("gvhmr", "fitted_smpl"), "smpl_param.npz"))
         # ground is z = 0
         # z up
         
-        transl        = smpl_motion['trans'].astype(np.float64)[60:]
-        body_pose     = smpl_motion['body_pose'].astype(np.float64)[60:]
-        global_orient = smpl_motion['global_orient'].astype(np.float64)[60:]
-        betas         = smpl_motion['betas'].astype(np.float64)[60:]
+        transl        = smpl_motion['trans'].astype(np.float64)
+        body_pose     = smpl_motion['poses'][:,3:].astype(np.float64)
+        global_orient = smpl_motion['poses'][:,:3].astype(np.float64)
+        betas         = smpl_motion['shape'].astype(np.float64)
 
         with torch.no_grad():
             j0 = smpl(
@@ -80,14 +81,17 @@ if __name__ == "__main__":
             ).joints[:,0].numpy()
 
 
-
-        image_feature = smpl_motion["feature"][0][60:]
+        tmp = torch.load(os.path.join(name, "hmr4d_results.pt"))
+        image_feature = tmp["net_outputs"]["model_output"]["pred_context"][0].numpy()
 
         RRRR = np.array([[ 1.0,  0.0,  0.0, 0],
                          [ 0.0,  0.0, -1.0, 0], 
                          [ 0.0,  1.0,  0.0, 0],
                          [   0,    0,    0, 1]])
 
+        root_rot = sRot.from_rotvec(global_orient).as_matrix()
+        global_orient = sRot.from_matrix(RRRR[:3,:3].T @ root_rot).as_rotvec()
+        transl = (transl + j0) @ RRRR[:3,:3] - j0
 
         #########################################################################################################
         # For isaac gym:
@@ -133,22 +137,63 @@ if __name__ == "__main__":
         pose_quat = new_sk_state.local_rotation.numpy()
         #########################################################################################################
 
-        new_motion_out = {}
-        new_motion_out['pose_quat_global'] = pose_quat_global
-        new_motion_out['pose_quat'] = pose_quat
-        new_motion_out['root_trans_offset'] = root_trans_offset
-        new_motion_out['pose_aa'] = poses_isaac
-        # FQ features
-        new_motion_out["img_feat"] = image_feature[:N]
-        # additional
-        new_motion_out['fps']     = 30
-        new_motion_out['gender']  = "neutral"
-        new_motion_out['betas']   = betas
-        new_motion_out['poses_g'] = poses_g
-        new_motion_out['trans_g'] = trans_g
+        tmp = [0,2,3,5,7,8]
+        index = []
+        for i in range(0, N, 10):
+            for ttt in tmp:
+                if i+ttt >= N:
+                    break
+                index.append(i+ttt)
 
-        behave_full_motion_dict[name.split()[0]] = new_motion_out
 
-os.makedirs("data/behave_ground", exist_ok=True)
+        pose_quat_global  = pose_quat_global[index]
+        pose_quat         = pose_quat[index]
+        root_trans_offset = root_trans_offset[index]
+        poses_isaac       = poses_isaac[index]
+        image_feature     = image_feature[:N][index]
+        poses_g           = poses_g[index]
+        trans_g           = trans_g[index]
+
+        N = pose_quat_global.shape[0]
+        if small_mode:
+            for t in range(0, N, 300):
+                edd = min(t+300, N)
+                new_motion_out = {}
+                new_motion_out['pose_quat_global'] = pose_quat_global[t:edd]
+                new_motion_out['pose_quat'] = pose_quat[t:edd]
+                new_motion_out['root_trans_offset'] = root_trans_offset[t:edd]
+                new_motion_out['pose_aa'] = poses_isaac[t:edd]
+                # FQ features
+                new_motion_out["img_feat"] = image_feature[t:edd]
+                # additional
+                new_motion_out['fps']     = 30
+                new_motion_out['gender']  = "neutral"
+                new_motion_out['betas']   = betas
+                new_motion_out['poses_g'] = poses_g[t:edd]
+                new_motion_out['trans_g'] = trans_g[t:edd]
+                behave_full_motion_dict[name.split()[0]+"_%05d" % t] = new_motion_out
+        else:
+            new_motion_out = {}
+            new_motion_out['pose_quat_global'] = pose_quat_global
+            new_motion_out['pose_quat'] = pose_quat
+            new_motion_out['root_trans_offset'] = root_trans_offset
+            new_motion_out['pose_aa'] = poses_isaac
+            # FQ features
+            new_motion_out["img_feat"] = image_feature
+            # additional
+            new_motion_out['fps']     = 30
+            new_motion_out['gender']  = "neutral"
+            new_motion_out['betas']   = betas
+            new_motion_out['poses_g'] = poses_g
+            new_motion_out['trans_g'] = trans_g
+
+            behave_full_motion_dict[name.split()[0]] = new_motion_out
+
 if upright_start:
-    joblib.dump(behave_full_motion_dict, "data/EMDB2/EMDB2.pkl", compress=True)
+    if process_split == "test":
+        if small_mode:
+            joblib.dump(behave_full_motion_dict, "data/h36m/h36m_test.pkl", compress=True)
+        else:
+            joblib.dump(behave_full_motion_dict, "data/h36m/h36m_test_long.pkl", compress=True)
+    else:
+        joblib.dump(behave_full_motion_dict, "data/h36m/h36m_gt.pkl", compress=True)

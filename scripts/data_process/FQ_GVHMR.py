@@ -68,7 +68,7 @@ if __name__ == "__main__":
         betas = betas.mean(axis = 0)[None]
 
         tmp = transl.max(axis = 0) - transl.min(axis = 0)
-        if tmp[1] > 0.3:
+        if tmp[1] < 0.3 and tmp[1] > 0.7:
             print(name)
             continue
 
@@ -152,4 +152,4 @@ if __name__ == "__main__":
 
 os.makedirs("data/behave_ground", exist_ok=True)
 if upright_start:
-    joblib.dump(behave_full_motion_dict, "data/EMDB2/EMDB2.pkl", compress=True)
+    joblib.dump(behave_full_motion_dict, "data/EMDB2/EMDB2_GT.pkl", compress=True)

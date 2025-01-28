@@ -22,6 +22,7 @@ from smplx import SMPL
 
 if __name__ == "__main__":
     #----------------------------------------------------
+    small_mode = True
     process_split = "train"
     upright_start = True
     robot_cfg = {
@@ -134,22 +135,43 @@ if __name__ == "__main__":
         pose_quat = new_sk_state.local_rotation.numpy()
         #########################################################################################################
 
-        new_motion_out = {}
-        new_motion_out['pose_quat_global'] = pose_quat_global
-        new_motion_out['pose_quat'] = pose_quat
-        new_motion_out['root_trans_offset'] = root_trans_offset
-        new_motion_out['pose_aa'] = poses_isaac
-        # FQ features
-        new_motion_out["img_feat"] = image_feature[:N]
-        # additional
-        new_motion_out['fps']     = 30
-        new_motion_out['gender']  = "neutral"
-        new_motion_out['betas']   = betas
-        new_motion_out['poses_g'] = poses_g
-        new_motion_out['trans_g'] = trans_g
+        if small_mode:
+            for t in range(0, N, 300):
+                edd = min(t+300, N)
+                new_motion_out = {}
+                new_motion_out['pose_quat_global'] = pose_quat_global[t:edd]
+                new_motion_out['pose_quat'] = pose_quat[t:edd]
+                new_motion_out['root_trans_offset'] = root_trans_offset[t:edd]
+                new_motion_out['pose_aa'] = poses_isaac[t:edd]
+                # FQ features
+                new_motion_out["img_feat"] = image_feature[t:edd]
+                # additional
+                new_motion_out['fps']     = 30
+                new_motion_out['gender']  = "neutral"
+                new_motion_out['betas']   = betas
+                new_motion_out['poses_g'] = poses_g[t:edd]
+                new_motion_out['trans_g'] = trans_g[t:edd]
+                behave_full_motion_dict[name.split()[0]+"_%05d" % t] = new_motion_out
+        
+        else:
+            new_motion_out = {}
+            new_motion_out['pose_quat_global'] = pose_quat_global
+            new_motion_out['pose_quat'] = pose_quat
+            new_motion_out['root_trans_offset'] = root_trans_offset
+            new_motion_out['pose_aa'] = poses_isaac
+            # FQ features
+            new_motion_out["img_feat"] = image_feature[:N]
+            # additional
+            new_motion_out['fps']     = 30
+            new_motion_out['gender']  = "neutral"
+            new_motion_out['betas']   = betas
+            new_motion_out['poses_g'] = poses_g
+            new_motion_out['trans_g'] = trans_g
 
-        behave_full_motion_dict[name.split()[0]] = new_motion_out
+            behave_full_motion_dict[name.split()[0]] = new_motion_out
 
-os.makedirs("data/behave_ground", exist_ok=True)
 if upright_start:
-    joblib.dump(behave_full_motion_dict, "data/h36m/h36m.pkl", compress=True)
+    if small_mode:
+        joblib.dump(behave_full_motion_dict, "data/h36m/h36m_300.pkl", compress=True)
+    else:
+        joblib.dump(behave_full_motion_dict, "data/h36m/h36m.pkl", compress=True)
