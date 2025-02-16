@@ -165,6 +165,22 @@ class IMAMPPlayerContinuous(amp_players.AMPPlayerContinuous):
                     pred_pos_all = self.pred_pos_all[:humanoid_env._motion_lib._num_unique_motions]
                     gt_pos_all = self.gt_pos_all[: humanoid_env._motion_lib._num_unique_motions]
 
+
+
+
+
+
+                    #print(len(self.gt_pos_all), humanoid_env._motion_lib._num_unique_motions)
+                    #for i in self.gt_pos_all:
+                    #    print(i.shape)
+                    #exit()
+
+
+
+
+
+
+
                     # np.sum([i.shape[0] for i in self.pred_pos_all[:humanoid_env._motion_lib._num_unique_motions]])
                     # humanoid_env._motion_lib.get_motion_num_steps().sum()
 

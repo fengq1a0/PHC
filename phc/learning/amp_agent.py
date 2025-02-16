@@ -369,6 +369,11 @@ class AMPAgent(common_agent.CommonAgent):
         update_list = self.update_list
         terminated_flags = torch.zeros(self.num_actors, device=self.device)
         reward_raw = torch.zeros(1, device=self.device)
+        # FQ:
+        # terminated_flags = torch.zeros(self.num_actors, device=self.task_device)
+        # reward_raw = torch.zeros(1, device=self.task_device)
+        #
+        #
         for n in range(self.horizon_length):
 
             self.obs = self.env_reset(done_indices)
@@ -815,18 +820,6 @@ class AMPAgent(common_agent.CommonAgent):
         # grad penalty
         disc_demo_grad = torch.autograd.grad(disc_demo_logit, obs_demo, grad_outputs=torch.ones_like(disc_demo_logit), create_graph=True, retain_graph=True, only_inputs=True)
         disc_demo_grad = disc_demo_grad[0]
-
-        ### ZL Hack for zeroing out gradient penalty on the shape (406,)
-        # if self.vec_env.env.task.__dict__.get("smpl_humanoid", False):
-        #     humanoid_env = self.vec_env.env.task
-        #     B, feat_dim = disc_demo_grad.shape
-        #     shape_obs_dim = 17
-        #     if humanoid_env.has_shape_obs:
-        #         amp_obs_dim = int(feat_dim / humanoid_env._num_amp_obs_steps)
-        #         for i in range(humanoid_env._num_amp_obs_steps):
-        #             disc_demo_grad[:,
-        #                            ((i + 1) * amp_obs_dim -
-        #                             shape_obs_dim):((i + 1) * amp_obs_dim)] = 0
 
         disc_demo_grad = torch.sum(torch.square(disc_demo_grad), dim=-1)
 

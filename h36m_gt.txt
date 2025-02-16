@@ -1,0 +1,16 @@
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog/smpl_param_0_ground.npz	1342
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog/smpl_param_1_ground.npz	1342
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog/smpl_param_2_ground.npz	1342
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog/smpl_param_3_ground.npz	1342
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog_1/smpl_param_0_ground.npz	1330
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog_1/smpl_param_1_ground.npz	1330
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog_1/smpl_param_2_ground.npz	1330
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S09/WalkDog_1/smpl_param_3_ground.npz	1330
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog/smpl_param_0_ground.npz	861
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog/smpl_param_1_ground.npz	861
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog/smpl_param_2_ground.npz	861
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog/smpl_param_3_ground.npz	861
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog_1/smpl_param_0_ground.npz	712
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog_1/smpl_param_1_ground.npz	712
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog_1/smpl_param_2_ground.npz	712
+/mnt/SSD_4T/data/human3.6m/fitted_smpl_4v_30fps/S11/WalkDog_1/smpl_param_3_ground.npz	712

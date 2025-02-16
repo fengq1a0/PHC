@@ -21,9 +21,10 @@ from smplx import SMPL
 
 
 if __name__ == "__main__":
+    ffff = open("h36m_gvhmr.txt", "w")
     #----------------------------------------------------
     small_mode = True
-    process_split = "train"
+    process_split = "test"
     upright_start = True
     robot_cfg = {
             "mesh": False,
@@ -49,7 +50,12 @@ if __name__ == "__main__":
     #------------------------------------------------------
     base_path = "/mnt/SSD_4T/data/human3.6m/gvhmr/"
     name_list = []
-    for tmp in ["S01", "S05", "S06", "S07", "S08"]:
+    if process_split == "train":
+        tmp_list = ["S01", "S05", "S06", "S07", "S08"]
+    else:
+        tmp_list = ["S09", "S11"]
+
+    for tmp in tmp_list:
         tmp_list = sorted(os.listdir(os.path.join(base_path, tmp)))
         tmp_list = [os.path.join(tmp, q) for q in tmp_list]
         name_list += tmp_list
@@ -62,12 +68,20 @@ if __name__ == "__main__":
 
     for name in tqdm(name_list):
         data_path = os.path.join(base_path, name, "hmr4d_results.pt")
+
+        tmp = data_path.replace("gvhmr", "fitted_smpl_4v_30fps").replace("/hmr4d_results.pt", "")[:-9]
+        tmp = os.path.join(tmp, "smpl_param_0_ground.npz")
+        tmp = np.load(tmp)
+        N = tmp['trans'].shape[0]
+
+        ffff.write("%s\t%d\n" % (data_path, N))
+
         smpl_motion = torch.load(data_path)
-        transl        = smpl_motion["net_outputs"]["pred_smpl_params_global"]['transl'][0].numpy().astype(np.float64)
-        body_pose     = smpl_motion["net_outputs"]["pred_smpl_params_global"]['body_pose'][0].numpy().astype(np.float64)
-        global_orient = smpl_motion["net_outputs"]["pred_smpl_params_global"]['global_orient'][0].numpy().astype(np.float64)
-        betas         = smpl_motion["net_outputs"]["pred_smpl_params_global"]['betas'][0].numpy().astype(np.float64)
-        image_feature = smpl_motion["net_outputs"]["model_output"]["pred_context"][0].numpy()
+        transl        = smpl_motion["net_outputs"]["pred_smpl_params_global"]['transl'][0].numpy().astype(np.float64)[:N]
+        body_pose     = smpl_motion["net_outputs"]["pred_smpl_params_global"]['body_pose'][0].numpy().astype(np.float64)[:N]
+        global_orient = smpl_motion["net_outputs"]["pred_smpl_params_global"]['global_orient'][0].numpy().astype(np.float64)[:N]
+        betas         = smpl_motion["net_outputs"]["pred_smpl_params_global"]['betas'][0].numpy().astype(np.float64)[:N]
+        image_feature = smpl_motion["net_outputs"]["model_output"]["pred_context"][0].numpy()[:N]
         
         betas = betas.mean(axis = 0)[None]
         #tmp = transl.max(axis = 0) - transl.min(axis = 0)
@@ -80,6 +94,7 @@ if __name__ == "__main__":
                 global_orient=torch.zeros((betas.shape[0], 3)),
                 body_pose=torch.zeros((betas.shape[0], 23*3))
             ).joints[:,0].numpy()
+
 
 
 
@@ -134,10 +149,18 @@ if __name__ == "__main__":
         pose_quat_global = new_sk_state.global_rotation.numpy()
         pose_quat = new_sk_state.local_rotation.numpy()
         #########################################################################################################
+        N = pose_quat_global.shape[0]
+        pose_quat_global  = pose_quat_global[:N]
+        pose_quat         = pose_quat[:N]
+        root_trans_offset = root_trans_offset[:N]
+        poses_isaac       = poses_isaac[:N]
+        image_feature     = image_feature[:N]
+        poses_g           = poses_g[:N]
+        trans_g           = trans_g[:N]
 
         if small_mode:
-            for t in range(0, N, 300):
-                edd = min(t+300, N)
+            for t in range(0, N, 100):
+                edd = min(t+100, N)
                 new_motion_out = {}
                 new_motion_out['pose_quat_global'] = pose_quat_global[t:edd]
                 new_motion_out['pose_quat'] = pose_quat[t:edd]
@@ -169,9 +192,16 @@ if __name__ == "__main__":
             new_motion_out['trans_g'] = trans_g
 
             behave_full_motion_dict[name.split()[0]] = new_motion_out
-
-if upright_start:
-    if small_mode:
-        joblib.dump(behave_full_motion_dict, "data/h36m/h36m_300.pkl", compress=True)
-    else:
-        joblib.dump(behave_full_motion_dict, "data/h36m/h36m.pkl", compress=True)
+    print(len(behave_full_motion_dict))
+    if upright_start:
+        if process_split == "test":
+            if small_mode:
+                joblib.dump(behave_full_motion_dict, "data/h36m/h36m_gvhmr_test.pkl", compress=True)
+            else:
+                joblib.dump(behave_full_motion_dict, "data/h36m/h36m_gvhmr_test_long.pkl", compress=True)
+        else:
+            if small_mode:
+                joblib.dump(behave_full_motion_dict, "data/h36m/h36m_gvhmr_train.pkl", compress=True)
+            else:
+                joblib.dump(behave_full_motion_dict, "data/h36m/h36m_gvhmr_train_long.pkl", compress=True)
+    ffff.close()
