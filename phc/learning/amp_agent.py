@@ -103,8 +103,11 @@ class AMPAgent(common_agent.CommonAgent):
 
         self.temp_running_mean = self.vec_env.env.task.temp_running_mean # use temp running mean to make sure the obs used for training is the same as calc gradient.
 
-        kin_lr = float(self.vec_env.env.task.kin_lr)
-        
+        self.kin_lr = float(self.vec_env.env.task.kin_lr)
+        self.kin_loss = self.vec_env.env.task.kin_loss
+        self.kin_weight = float(self.vec_env.env.task.kin_weight)
+        self.kin_dict_size = self.vec_env.env.task.kin_dict_size
+
         # ZL Hack
         if self.vec_env.env.task.fitting:
             print("#################### Fitting and freezing!! ####################")
@@ -189,7 +192,10 @@ class AMPAgent(common_agent.CommonAgent):
         super().init_tensors()
         self._build_amp_buffers()
 
-            
+        if self.kin_loss:
+            B, S, _ = self.experience_buffer.tensor_dict['obses'].shape
+            self.experience_buffer.tensor_dict['kin_dict'] = torch.zeros((B, S, self.kin_dict_size)).to(self.experience_buffer.tensor_dict['obses'])
+            self.tensor_list += ['kin_dict']
         return
 
     def set_eval(self):
@@ -398,6 +404,11 @@ class AMPAgent(common_agent.CommonAgent):
             self.experience_buffer.update_data('dones', n, self.dones)
             self.experience_buffer.update_data('amp_obs', n, infos['amp_obs'])
 
+
+            # TODO: FQ: update kin_dict
+            if self.kin_loss:
+                self.experience_buffer.update_data('kin_dict', n, infos['kin_dict'])
+
                 
             terminated = infos['terminate'].float()
             terminated_flags += terminated
@@ -461,8 +472,9 @@ class AMPAgent(common_agent.CommonAgent):
         dataset_dict['amp_obs'] = batch_dict['amp_obs']
         dataset_dict['amp_obs_demo'] = batch_dict['amp_obs_demo']
         dataset_dict['amp_obs_replay'] = batch_dict['amp_obs_replay']
+        if self.kin_loss:
+            dataset_dict["kin_dict"] = batch_dict["kin_dict"]
 
-            
         self.dataset.update_values_dict(dataset_dict, rnn_format = True, horizon_length = self.horizon_length, num_envs = self.num_actors)
         # self.dataset.update_values_dict(dataset_dict)
 
@@ -654,7 +666,24 @@ class AMPAgent(common_agent.CommonAgent):
         curr_e_clip = lr_mul * self.e_clip
         
         self.train_result = {}
-        
+        ################### FQ works here #################################
+        if self.kin_loss:
+            distill_dict = {}
+            distill_dict['obs']      = input_dict['obs_processed']
+            rnn_len = 1
+            if self.is_rnn:
+                distill_dict['rnn_states'] = input_dict['rnn_states']
+                distill_dict['seq_length'] = rnn_len
+
+            pred_action, pred_action_sigma = self.model.a2c_network.eval_actor(distill_dict)
+            kin_action_loss = torch.nn.functional.mse_loss(pred_action, input_dict['kin_dict'])
+
+  #          print(kin_action_loss)            
+
+
+
+
+        ###################################################################        
         batch_dict = {'is_train': True, 'amp_steps': self.vec_env.env.task._num_amp_obs_steps, \
             'prev_actions': actions_batch, 'obs': obs_batch_processed, 'amp_obs': amp_obs, 'amp_obs_replay': amp_obs_replay, 'amp_obs_demo': amp_obs_demo, \
                 "obs_orig": obs_batch
@@ -712,6 +741,13 @@ class AMPAgent(common_agent.CommonAgent):
                 + self._disc_coef * disc_loss
             
             
+
+            # FQ: add kinematic loss
+            if self.kin_loss:
+                loss += self.kin_weight * kin_action_loss
+                a_info['actor_kin_action_loss'] = kin_action_loss
+
+
             a_clip_frac = torch.mean(a_info['actor_clipped'].float())
 
             a_info['actor_loss'] = a_loss
@@ -989,7 +1025,6 @@ class AMPAgent(common_agent.CommonAgent):
         #     train_info_dict["success_rate"] =  1 - torch.mean((train_info['terminated_flags'] > 0).float()).item()
         
         if "reward_raw" in train_info:
-            # TODO: FQ hack
             reward_name = ["position", "rotation", "vel", "ang_vel", "power"]
             for idx, v in enumerate(train_info['reward_raw'].cpu().numpy().tolist()):
                 train_info_dict["%s_reward" % reward_name[idx]] =  v

@@ -243,7 +243,8 @@ class FQ_RenderingReward():
 '''
 
 ##########################################################################################################################
-
+from phc.learning.network_loader import load_pnn, load_mcp_mlp
+from rl_games.algos_torch import torch_ext
 
 class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
 
@@ -354,6 +355,27 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         self._sampled_motion_ids = torch.arange(self.num_envs).to(self.device)
         self.create_o3d_viewer()
 
+        ######################
+        # FQ: Just a tmp cache
+        if self.kin_loss:
+            self.kin_dict = torch.zeros([self.num_envs, self._num_actions])
+            self.ori_obs_buf = torch.zeros((self.num_envs, 934), device=self.device, dtype=torch.float) # FQ1
+        
+            if self.cfg["env"].get("pnn_distill", True):
+                check_points = [torch_ext.load_checkpoint(ck_path) for ck_path in ['output/HumanoidIm/phc_3/Humanoid_00258000.pth',
+                                                                                   'output/HumanoidIm/phc_comp_3/Humanoid_00023501.pth']]
+                self.pnn = load_pnn(check_points[0],
+                                    num_prim = 3,
+                                    has_lateral = False, 
+                                    activation = "silu", 
+                                    device = self.device)
+#                self.running_mean, self.running_var = check_points[0]['running_mean_std']['running_mean'], check_points[0]['running_mean_std']['running_var']
+                self.composer = load_mcp_mlp(check_points[1], activation = "silu", device = self.device, mlp_name = "composer")
+
+            self.running_mean, self.running_var = check_points[-1]['running_mean_std']['running_mean'], check_points[-1]['running_mean_std']['running_var']
+
+        
+        ######################
         # FQ: the renderer for rendering reward
         #############################################################################
         #if self.humanoid_type == "smpl":
@@ -363,7 +385,6 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         #self.FQ_render = FQ_RenderingReward("Date01_Sub01_boxsmall_hand", self.device, mujoco_2_smpl)
         #############################################################################
         return
-    
     
     def pause_func(self, action):
         self.paused = not self.paused
@@ -569,11 +590,22 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 "im_eval": flags.im_eval,
                 "multi_thread": not self.cfg.disable_multiprocessing ,
                 "smpl_type": self.humanoid_type,
-                "randomrize_heading": True,
+                "randomrize_heading": False,
                 "device": self.device,
             })
             motion_eval_file = motion_train_file
             self._motion_train_lib = MotionLibSMPL(motion_lib_cfg)
+
+            # TODO FQ: AMP
+            # motion_lib_cfg["motion_file"] = "XXXXXXX"
+            # self._motion_amp_lib = MotionLibSMPL(motion_lib_cfg)
+            # motion_lib_cfg["motion_file"] = motion_train_file
+            # It's ok to use current keys
+            # self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=self.humanoid_shapes.cpu(),
+            #                               limb_weights=self.humanoid_limb_and_weights.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
+            #                               max_len=-1 if flags.test else self.max_len, start_idx=self.start_idx)
+
+
             motion_lib_cfg.im_eval = True
             self._motion_eval_lib = MotionLibSMPL(motion_lib_cfg)
 
@@ -625,6 +657,10 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         if flags.test:
             self.forward_motion_samples()
         else:
+            # TODO FQ: AMP
+            #self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, limb_weights=self.humanoid_limb_and_weights.cpu(), gender_betas=self.humanoid_shapes.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
+            #                              max_len=-1 if flags.test else self.max_len)  # For now, only need to sample motions since there are only 400 hmanoids
+                        
             self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, limb_weights=self.humanoid_limb_and_weights.cpu(), gender_betas=self.humanoid_shapes.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
                                           max_len=-1 if flags.test else self.max_len)  # For now, only need to sample motions since there are only 400 hmanoids
             time = self.progress_buf * self.dt + self._motion_start_times + self._motion_start_times_offset
@@ -747,7 +783,9 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 obs_size = len(self._track_bodies) * self._num_traj_samples * 24
                 obs_size -= (len(self._track_bodies) - 1) * self._num_traj_samples * 6
             elif self.obs_v == 66:
-                obs_size = 512 + 9 #1024 + 3 + 10 + 9 #+ 23*3 +16
+                obs_size = 512 + 9
+            elif self.obs_v == 77:
+                obs_size = 512
             elif self.obs_v == 767:
                 obs_size = 6 * 24 + 3
             elif self.obs_v == 88:
@@ -911,6 +949,8 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
 
     def post_physics_step(self):
         super().post_physics_step()
+        # TODO FQ Here
+        self.extras["kin_dict"] = self.kin_dict
         
         if flags.im_eval:
             motion_times = (self.progress_buf) * self.dt + self._motion_start_times + self._motion_start_times_offset  # already has time + 1, so don't need to + 1 to get the target for "this frame"
@@ -931,6 +971,43 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 self.obs_buf_t = self.obs_buf.cpu().numpy() # update to next time step
 
         return
+    
+    def step(self, actions):
+        if self.dr_randomizations.get('actions', None):
+            actions = self.dr_randomizations['actions']['noise_lambda'](actions)
+
+        ###############################################################################
+        ### before step, get gt_action, store it in self.kin_dict (the cache)
+        if self.kin_loss:
+            full_obs = ((self.ori_obs_buf - self.running_mean.float()) / torch.sqrt(self.running_var.float() + 1e-05))
+            full_obs = torch.clamp(full_obs, min=-5.0, max=5.0)
+
+            _, pnn_actions = self.pnn(full_obs)
+            x_all = torch.stack(pnn_actions, dim=1)
+            weights = self.composer(full_obs)
+            gt_action = torch.sum(weights[:, :, None] * x_all, dim=1)
+            self.kin_dict = gt_action.squeeze()
+        ################################################################################
+
+
+        # apply actions
+        self.pre_physics_step(actions)
+
+        # step physics and render each frame
+        self._physics_step()
+
+        # to fix!
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+
+        # compute observations, rewards, resets, ...
+        self.post_physics_step()
+        
+
+        if self.dr_randomizations.get('observations', None):
+            self.obs_buf = self.dr_randomizations['observations']['noise_lambda'](self.obs_buf)
+
+
 
     def _compute_observations(self, env_ids=None):
         # env_ids is used for resetting
@@ -963,7 +1040,81 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         else:
             self.obs_buf[env_ids] = obs
         
+
+        # FQ
+        # as long as step is not called, the observation is usable.
+        if self.kin_loss:
+            ori_task_obs = self._compute_task_obs_ori(env_ids)
+            self.ori_obs_buf[env_ids] = torch.cat([self_obs, ori_task_obs], dim=-1)
         return obs
+    
+
+
+
+
+    def _compute_task_obs_ori(self, env_ids=None):
+        if (env_ids is None):
+            body_pos = self._rigid_body_pos
+            body_rot = self._rigid_body_rot
+            body_vel = self._rigid_body_vel
+            body_ang_vel = self._rigid_body_ang_vel
+            env_ids = torch.arange(self.num_envs, dtype=torch.long, device=self.device)
+        else:
+            body_pos = self._rigid_body_pos[env_ids]
+            body_rot = self._rigid_body_rot[env_ids]
+            body_vel = self._rigid_body_vel[env_ids]
+            body_ang_vel = self._rigid_body_ang_vel[env_ids]
+
+        
+        if self._fut_tracks:
+            time_steps = self._num_traj_samples
+            B = env_ids.shape[0]
+            time_internals = torch.arange(time_steps).to(self.device).repeat(B).view(-1, time_steps) * self._traj_sample_timestep
+            motion_times_steps = ((self.progress_buf[env_ids, None] + 1) * self.dt + time_internals + self._motion_start_times[env_ids, None] + self._motion_start_times_offset[env_ids, None]).flatten()  # Next frame, so +1
+            env_ids_steps = self._sampled_motion_ids[env_ids].repeat_interleave(time_steps)
+            motion_res = self._get_state_from_motionlib_cache(env_ids_steps, motion_times_steps, self._global_offset[env_ids].repeat_interleave(time_steps, dim=0).view(-1, 3))  # pass in the env_ids such that the motion is in synced.
+
+        else:
+            motion_times = (self.progress_buf[env_ids] + 1) * self.dt + self._motion_start_times[env_ids] + self._motion_start_times_offset[env_ids]  # Next frame, so +1
+            time_steps = 1
+            motion_res = self._get_state_from_motionlib_cache(self._sampled_motion_ids[env_ids], motion_times, self._global_offset[env_ids])  # pass in the env_ids such that the motion is in synced.
+
+        ref_root_pos, ref_root_rot, ref_dof_pos, ref_root_vel, ref_root_ang_vel, ref_dof_vel, ref_smpl_params, ref_limb_weights, ref_pose_aa, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel = \
+                motion_res["root_pos"], motion_res["root_rot"], motion_res["dof_pos"], motion_res["root_vel"], motion_res["root_ang_vel"], motion_res["dof_vel"], \
+                motion_res["motion_bodies"], motion_res["motion_limb_weights"], motion_res["motion_aa"], motion_res["rg_pos"], motion_res["rb_rot"], motion_res["body_vel"], motion_res["body_ang_vel"]
+        root_pos = body_pos[..., 0, :]
+        root_rot = body_rot[..., 0, :]
+
+        body_pos_subset = body_pos[..., self._track_bodies_id, :]
+        body_rot_subset = body_rot[..., self._track_bodies_id, :]
+        body_vel_subset = body_vel[..., self._track_bodies_id, :]
+        body_ang_vel_subset = body_ang_vel[..., self._track_bodies_id, :]
+
+        ref_rb_pos_subset = ref_rb_pos[..., self._track_bodies_id, :]
+        ref_rb_rot_subset = ref_rb_rot[..., self._track_bodies_id, :]
+        ref_body_vel_subset = ref_body_vel[..., self._track_bodies_id, :]
+        ref_body_ang_vel_subset = ref_body_ang_vel[..., self._track_bodies_id, :]
+
+        obs = compute_imitation_observations_v6(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+        return obs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def _compute_task_obs(self, env_ids=None, save_buffer = True):
         if (env_ids is None):
@@ -1018,7 +1169,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             obs = compute_imitation_observations_v2(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, dof_pos_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, ref_dof_pos_subset, time_steps, self._has_upright_start)
         elif self.obs_v == 3:
             obs = compute_imitation_observations_v3(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
-        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66 or self.obs_v == 767 or self.obs_v == 88 or self.obs_v == 999:
+        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66 or self.obs_v == 767 or self.obs_v == 88 or self.obs_v == 999 or self.obs_v == 77:
 
             if self.zero_out_far:
                 close_distance = self.close_distance
@@ -1074,6 +1225,8 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                     root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, 
                     body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, 
                     ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+            elif self.obs_v == 77:
+                obs = motion_res["FQ_feat"]
             else:
                 raise NotImplementedError("No such observerion")
 

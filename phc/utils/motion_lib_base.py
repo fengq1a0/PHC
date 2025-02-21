@@ -336,23 +336,6 @@ class MotionLibBase():
 
     def get_total_length(self):
         return sum(self._motion_lengths)
-
-    # def update_sampling_weight(self):
-    #     ## sampling weight based on success rate. 
-    #     # sampling_temp = 0.2
-    #     sampling_temp = 0.1
-    #     curr_termination_prob = 0.5
-
-    #     curr_succ_rate = 1 - self._termination_history[self._curr_motion_ids] / self._sampling_history[self._curr_motion_ids]
-    #     self._success_rate[self._curr_motion_ids] = curr_succ_rate
-    #     sample_prob = torch.exp(-self._success_rate / sampling_temp)
-
-    #     self._sampling_prob = sample_prob / sample_prob.sum()
-    #     self._termination_history[self._curr_motion_ids] = 0
-    #     self._sampling_history[self._curr_motion_ids] = 0
-
-    #     topk_sampled = self._sampling_prob.topk(50)
-    #     print("Current most sampled", self._motion_data_keys[topk_sampled.indices.cpu().numpy()])
         
     def update_hard_sampling_weight(self, failed_keys):
         # sampling weight based on evaluation, only trained on "failed" sequences. Auto PMCP. 
@@ -391,15 +374,6 @@ class MotionLibBase():
             return True
         else:
             return False
-        
-        
-    # def update_sampling_history(self, env_ids):
-    #     self._sampling_history[self._curr_motion_ids[env_ids]] += 1
-    #     # print("sampling history: ", self._sampling_history[self._curr_motion_ids])
-
-    # def update_termination_history(self, termination):
-    #     self._termination_history[self._curr_motion_ids] += termination
-    #     # print("termination history: ", self._termination_history[self._curr_motion_ids])
 
     def sample_motions(self, n):
         motion_ids = torch.multinomial(self._sampling_batch_prob, num_samples=n, replacement=True).to(self._device)

@@ -222,6 +222,12 @@ class HumanoidAMP(Humanoid):
         motion_ids = self._motion_lib.sample_motions(num_samples)
         motion_times0 = self._sample_time(motion_ids)
         amp_obs_demo = self.build_amp_obs_demo(motion_ids, motion_times0)
+        # TODO FQ: AMP
+        # motion_ids = self._motion_amp_lib.sample_motions(num_samples)
+        # motion_times0 = self._motion_amp_lib.sample_time_interval(motion_ids)
+        # amp_obs_demo = self.fq_build_amp_obs_demo(motion_ids, motion_times0)
+
+        
         self._amp_obs_demo_buf[:] = amp_obs_demo.view(self._amp_obs_demo_buf.shape)
         amp_obs_demo_flat = self._amp_obs_demo_buf.view(-1, self.get_num_amp_obs())
         
@@ -281,6 +287,35 @@ class HumanoidAMP(Humanoid):
             amp_obs_demo = amp_obs_demo + torch.randn_like(amp_obs_demo) * 0.01
 
         return amp_obs_demo
+    
+# TODO FQ: AMP
+#    def fq_build_amp_obs_demo(self, motion_ids, motion_times0):
+#        # Compute observation for the motion starting point
+#        dt = self.dt
+#        motion_ids = torch.tile(motion_ids.unsqueeze(-1), [1, self._num_amp_obs_steps])
+#
+#        motion_times = motion_times0.unsqueeze(-1)
+#        time_steps = -dt * torch.arange(0, self._num_amp_obs_steps, device=self.device)
+#        motion_times = motion_times + time_steps
+#
+#        motion_ids = motion_ids.view(-1)
+#        motion_times = motion_times.view(-1)
+#
+#        if self.humanoid_type in ['h1', 'g1', "smpl", "smplh", "smplx"]:
+#            motion_res = self._motion_amp_lib.get_motion_state(motion_ids, motion_times, offset=None)
+#
+#            root_pos, root_rot, dof_pos, root_vel, root_ang_vel, dof_vel,  smpl_params, limb_weights, pose_aa, rb_pos, rb_rot, body_vel, body_ang_vel = \
+#                motion_res["root_pos"], motion_res["root_rot"], motion_res["dof_pos"], motion_res["root_vel"], motion_res["root_ang_vel"], motion_res["dof_vel"], \
+#                motion_res["motion_bodies"], motion_res["motion_limb_weights"], motion_res["motion_aa"], motion_res["rg_pos"], motion_res["rb_rot"], motion_res["body_vel"], motion_res["body_ang_vel"]
+#            
+#            key_pos  = rb_pos[:, self._key_body_ids]
+#            key_vel = body_vel[:, self._key_body_ids]
+#            amp_obs_demo = self._compute_amp_observations_from_state(root_pos, root_rot, root_vel, root_ang_vel, dof_pos, dof_vel, key_pos, key_vel, smpl_params, limb_weights, self.dof_subset, self._local_root_obs, self._amp_root_height_obs, self._has_dof_subset, self._has_shape_obs_disc, self._has_limb_weight_obs_disc,
+#                                                           self._has_upright_start)
+#
+#        return amp_obs_demo
+#
+
 
     def _build_amp_obs_demo_buf(self, num_samples):
         self._amp_obs_demo_buf = torch.zeros((num_samples, self._num_amp_obs_steps, self._num_amp_obs_per_step), device=self.device, dtype=torch.float32)

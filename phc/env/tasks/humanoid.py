@@ -298,8 +298,11 @@ class Humanoid(BaseTask):
         
         
         ## Kin stuff
-        self.kin_loss = cfg["env"].get("kin_loss", False)
-        self.kin_lr = cfg["env"].get("kin_lr", 5e-4)
+        self.kin_loss   = cfg["env"].get("kin_loss", False)
+        self.kin_lr     = cfg["env"].get("kin_lr", 5e-4)
+        self.kin_weight = cfg["env"].get("kin_weight", 0.1)
+        self.kin_dict_size = cfg["env"].get("kin_dict_size", 69)
+
         self.z_readout = cfg["env"].get("z_readout", False)
         self.z_read = cfg["env"].get("z_read", False)
         self.z_uniform = cfg["env"].get("z_uniform", False)
