@@ -19,22 +19,8 @@ from smpl_sim.smpllib.smpl_local_robot import SMPL_Robot as LocalRobot
 import json
 from smplx import SMPL
 
-
-
-mmpp = [
-    "54138969",
-    "55011271",
-    "58860488",
-    "60457274"
-]
-
-
-
-
 if __name__ == "__main__":
-#    ffff = open("h36m_gt.txt", "w")
     #----------------------------------------------------
-    small_mode = False
     process_split = "train"
     upright_start = True
     robot_cfg = {
@@ -59,25 +45,21 @@ if __name__ == "__main__":
         }
     smpl_local_robot = LocalRobot(robot_cfg,)
     #------------------------------------------------------
-    base_path = "/mnt/SSD_4T/data/human3.6m/"
-    train_list = ["S01", "S05", "S06", "S07", "S08"]
-    test_list = ["S09", "S11"]
-
-    name_list = []
+    base_path = "/mnt/SSD_4T/data/AIST++/"
     if process_split == "train":
-        for name in train_list:
-            name_list += sorted(glob.glob(os.path.join(base_path, "fitted_smpl_4v_30fps_scale", name, "*")))
-    elif process_split == "test":
-        for name in test_list:
-            name_list += sorted(glob.glob(os.path.join(base_path, "fitted_smpl_4v_30fps_scale", name, "*")))
-
+        name_path = "/mnt/SSD_4T/data/AIST++/aist_plusplus_final/train.txt"
+    else:
+        name_path = "/mnt/SSD_4T/data/AIST++/aist_plusplus_final/test.txt"
+    with open(name_path, "r") as f:
+        name_list = f.read().split()
+    #------------------------------------------------------
     smpl = SMPL(model_path="/home/fq/repo/PHC/data/smpl/", gender="neutral")
     smpl_2_mujoco = [SMPL_BONE_ORDER_NAMES.index(q) for q in SMPL_MUJOCO_NAMES if q in SMPL_BONE_ORDER_NAMES]
     #------------------------------------------------------
     behave_full_motion_dict = {}
     for name in tqdm(name_list):
-        for cam_id in range(4):
-            smpl_motion = np.load(os.path.join(name, "smpl_param_%d_ground.npz" % cam_id))
+        for cam_id in [1]:#range(1,10,3):
+            smpl_motion = np.load(os.path.join(base_path, "ground_space", name.replace("cAll", "c%02d" % cam_id) + ".npz"))
             # ground is y = 0
             # y up
 
@@ -98,12 +80,14 @@ if __name__ == "__main__":
                     body_pose=torch.zeros((body_pose.shape[0], 23*3))
                 ).joints[:,0].numpy()
 
-            tmp = name.replace("fitted_smpl_4v_30fps_scale", "gvhmr")
-            if tmp[-1] == "/":
-                tmp = tmp[:-1]
-            tmp = tmp+ ".%s/hmr4d_results.pt" % mmpp[cam_id]
-            tmp = torch.load(tmp)
-            image_feature = tmp["net_outputs"]["model_output"]["pred_context"][0].numpy()
+# FQ: TODO: No feature for now
+            image_feature = np.zeros((transl.shape[0], 512), dtype=np.float32)
+#            tmp = name.replace("fitted_smpl_4v_30fps_scale", "gvhmr")
+#            if tmp[-1] == "/":
+#                tmp = tmp[:-1]
+#            tmp = tmp+ ".%s/hmr4d_results.pt" % mmpp[cam_id]
+#            tmp = torch.load(tmp)
+#            image_feature = tmp["net_outputs"]["model_output"]["pred_context"][0].numpy()
 
             RRRR = np.array([[ 1.0,  0.0,  0.0, 0],
                              [ 0.0,  0.0, -1.0, 0], 
@@ -158,69 +142,42 @@ if __name__ == "__main__":
             pose_quat = new_sk_state.local_rotation.numpy()
             #########################################################################################################
             N = pose_quat_global.shape[0]
-            pose_quat_global  = pose_quat_global[:N]
-            pose_quat         = pose_quat[:N]
-            root_trans_offset = root_trans_offset[:N]
-            poses_isaac       = poses_isaac[:N]
+            pose_quat_global  = pose_quat_global[:N:2]
+            pose_quat         = pose_quat[:N:2]
+            root_trans_offset = root_trans_offset[:N:2]
+            poses_isaac       = poses_isaac[:N:2]
 
-            image_feature     = image_feature[:N]
-            poses_g           = poses_g[:N]
-            trans_g           = trans_g[:N]
+            image_feature     = image_feature[:N:2]
+            poses_g           = poses_g[:N:2]
+            trans_g           = trans_g[:N:2]
 
-            if small_mode:
-                for t in range(0, N, 100):
-                    edd = min(t+100, N)
-                    if edd == N:
-                        t = edd-100
-                    new_motion_out = {}
-                    new_motion_out['pose_quat_global'] = pose_quat_global[t:edd]
-                    new_motion_out['pose_quat'] = pose_quat[t:edd]
-                    new_motion_out['root_trans_offset'] = root_trans_offset[t:edd]
-                    new_motion_out['pose_aa'] = poses_isaac[t:edd]
-                    # FQ features
-                    new_motion_out["img_feat"] = image_feature[t:edd]
-                    #new_motion_out["R_in_cam"]
-                    #new_motion_out["T_in_cam"]
-                    #new_motion_out["c2g"]
-                    # additional
-                    new_motion_out['fps']     = 30
-                    new_motion_out['gender']  = "neutral"
-                    new_motion_out['scale']   = scale
-                    new_motion_out['poses_g'] = poses_g[t:edd]
-                    new_motion_out['trans_g'] = trans_g[t:edd]
-                    behave_full_motion_dict[name.split("/")[-2]+"/"+name.split("/")[-1]+"."+mmpp[cam_id]+"_%05d" % t] = new_motion_out
-            else:
-                new_motion_out = {}
-                new_motion_out['pose_quat_global'] = pose_quat_global
-                new_motion_out['pose_quat'] = pose_quat
-                new_motion_out['root_trans_offset'] = root_trans_offset
-                new_motion_out['pose_aa'] = poses_isaac
-                # FQ features
-                new_motion_out["img_feat"] = image_feature
-                #new_motion_out["R_in_cam"]
-                #new_motion_out["T_in_cam"]
-                #new_motion_out["c2g"]
-                # additional
-                new_motion_out['fps']     = 30
-                new_motion_out['gender']  = "neutral"
-                new_motion_out['scale']   = scale
-                new_motion_out['poses_g'] = poses_g
-                new_motion_out['trans_g'] = trans_g
-                behave_full_motion_dict[name.split("/")[-2]+"/"+name.split("/")[-1]+"."+mmpp[cam_id]] = new_motion_out
+
+
+
+            new_motion_out = {}
+            new_motion_out['pose_quat_global'] = pose_quat_global
+            new_motion_out['pose_quat'] = pose_quat
+            new_motion_out['root_trans_offset'] = root_trans_offset
+            new_motion_out['pose_aa'] = poses_isaac
+#            # FQ features
+#            new_motion_out["img_feat"] = image_feature
+#            #new_motion_out["R_in_cam"]
+#            #new_motion_out["T_in_cam"]
+#            #new_motion_out["c2g"]
+#            # additional
+            new_motion_out['fps']     = 30
+            new_motion_out['gender']  = "neutral"
+#            new_motion_out['scale']   = scale
+#            new_motion_out['poses_g'] = poses_g
+#            new_motion_out['trans_g'] = trans_g
+            behave_full_motion_dict[name.replace("cAll", "c%02d" % cam_id)] = new_motion_out
     print(len(behave_full_motion_dict))
 
     save_path = ""
     if upright_start:
         if process_split == "test":
-            if small_mode:
-                save_path = "data/h36m/h36m_test.pkl"
-            else:
-                save_path = "data/h36m/h36m_test_long.pkl"
+            save_path = "data/h36m/aist_test_long.pkl"
         else:
-            if small_mode:
-                save_path = "data/h36m/h36m_train.pkl"
-            else:
-                save_path = "data/h36m/h36m_train_long.pkl"
+            save_path = "data/h36m/aist_train_long.pkl"
         joblib.dump(behave_full_motion_dict, save_path, compress=True)
         print(save_path)
-#    ffff.close()
