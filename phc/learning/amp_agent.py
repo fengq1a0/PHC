@@ -117,6 +117,12 @@ class AMPAgent(common_agent.CommonAgent):
             # load_my_state_dict(self.model.state_dict(), checkpoint['model'])  # loads everything (model, std, ect.). that can be load from the last model.
             # self.value_mean_std # not freezing value function though.
         
+        if self.kin_loss and self.kin_weight > 1000000:
+            self.BC_only = True
+        else:
+            self.BC_only = False
+
+
         return
     
     def set_stats_weights(self, weights):
@@ -677,18 +683,22 @@ class AMPAgent(common_agent.CommonAgent):
 
             pred_action, pred_action_sigma = self.model.a2c_network.eval_actor(distill_dict)
             kin_action_loss = torch.nn.functional.mse_loss(pred_action, input_dict['kin_dict'])
+        ###################################################################    
 
-  #          print(kin_action_loss)            
-
-
-
-
-        ###################################################################        
+            
+#        if BC_only:
+#            # in this case, we apply kin_loss only
+#            loss = kin_action_loss
+#            self.train_result.update( {'entropy': torch.tensor(0).float(), 'kl': torch.tensor(0).float(), 'last_lr': self.last_lr, 'lr_mul': torch.tensor(0).float()})
+#            a_info = {'actor_loss': torch.tensor(0).float(),  "b_loss": torch.tensor(0).float(), "actor_clip_frac": torch.tensor(0).float()}
+#            c_info = {'critic_loss': torch.tensor(0).float()}
+#            a_info['actor_kin_action_loss'] = kin_action_loss
+#        else:
         batch_dict = {'is_train': True, 'amp_steps': self.vec_env.env.task._num_amp_obs_steps, \
             'prev_actions': actions_batch, 'obs': obs_batch_processed, 'amp_obs': amp_obs, 'amp_obs_replay': amp_obs_replay, 'amp_obs_demo': amp_obs_demo, \
                 "obs_orig": obs_batch
                 }
-    
+
         rnn_masks = None
         rnn_len = self.horizon_length
         rnn_len = 1
@@ -696,11 +706,11 @@ class AMPAgent(common_agent.CommonAgent):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = rnn_len
-            
-            
+
+
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict) # current model if RNN, has BPTT enabled. 
-            
+
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
@@ -715,10 +725,9 @@ class AMPAgent(common_agent.CommonAgent):
                 old_action_log_probs_batch, action_log_probs, advantage, values, entropy, mu, sigma, return_batch, old_mu_batch, old_sigma_batch = \
                     old_action_log_probs_batch[rnn_mask_bool], action_log_probs[rnn_mask_bool], advantage[rnn_mask_bool], values[rnn_mask_bool], \
                         entropy[rnn_mask_bool], mu[rnn_mask_bool], sigma[rnn_mask_bool], return_batch[rnn_mask_bool], old_mu_batch[rnn_mask_bool], old_sigma_batch[rnn_mask_bool]
-                
-                # flatten values for computing loss
-                
-                
+                    # flatten values for computing loss
+
+
             a_info = self._actor_loss(old_action_log_probs_batch, action_log_probs, advantage, curr_e_clip)
             a_loss = a_info['actor_loss']
 
@@ -733,20 +742,26 @@ class AMPAgent(common_agent.CommonAgent):
             entropy = torch.mean(entropy)
 
             disc_agent_cat_logit = torch.cat([disc_agent_logit, disc_agent_replay_logit], dim=0)
-            
+
             disc_info = self._disc_loss(disc_agent_cat_logit, disc_demo_logit, amp_obs_demo)
             disc_loss = disc_info['disc_loss']
 
-            loss = a_loss + self.critic_coef * c_loss - self.entropy_coef * entropy + self.bounds_loss_coef * b_loss \
-                + self._disc_coef * disc_loss
-            
-            
 
-            # FQ: add kinematic loss
-            if self.kin_loss:
-                loss += self.kin_weight * kin_action_loss
+            if self.BC_only:
+                ######### Dirty method to apply kin_loss only #########
+                loss_tmp = a_loss + self.critic_coef * c_loss - self.entropy_coef * entropy + self.bounds_loss_coef * b_loss \
+                    + self._disc_coef * disc_loss
+                loss_tmp.backward()
+                self.optimizer.zero_grad()
+                #######################################################
+                loss = 100 * kin_action_loss
                 a_info['actor_kin_action_loss'] = kin_action_loss
-
+            else:
+                loss = a_loss + self.critic_coef * c_loss - self.entropy_coef * entropy + self.bounds_loss_coef * b_loss \
+                    + self._disc_coef * disc_loss
+                if self.kin_loss:
+                    loss += self.kin_weight * kin_action_loss
+                    a_info['actor_kin_action_loss'] = kin_action_loss
 
             a_clip_frac = torch.mean(a_info['actor_clipped'].float())
 
@@ -759,6 +774,10 @@ class AMPAgent(common_agent.CommonAgent):
             else:
                 for param in self.model.parameters():
                     param.grad = None
+
+
+
+
 
         self.scaler.scale(loss).backward()
         
@@ -786,12 +805,11 @@ class AMPAgent(common_agent.CommonAgent):
         else:
             self.scaler.step(self.optimizer)
             self.scaler.update()
-          
+
         self.train_result.update( {'entropy': entropy, 'kl': kl_dist, 'last_lr': self.last_lr, 'lr_mul': lr_mul, 'b_loss': b_loss})
-        self.train_result.update(a_info)
-        self.train_result.update(c_info)
         self.train_result.update(disc_info)
-            
+        self.train_result.update(a_info)
+        self.train_result.update(c_info)            
         return
 
     def _load_config_params(self, config):
@@ -1015,6 +1033,9 @@ class AMPAgent(common_agent.CommonAgent):
                 "disc_reward_std": disc_reward_std.item(),
             })
         
+        if "actor_kin_action_loss" in train_info:
+            train_info_dict["kin_loss"] = torch_ext.mean_list(train_info['actor_kin_action_loss']).item()
+
         if "returns" in train_info:
             train_info_dict['returns'] = train_info['returns'].mean().item()
             

@@ -361,7 +361,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             self.kin_dict = torch.zeros([self.num_envs, self._num_actions])
             self.ori_obs_buf = torch.zeros((self.num_envs, 934), device=self.device, dtype=torch.float) # FQ1
         
-            if self.cfg["env"].get("pnn_distill", True):
+            if self.teacher_mode == "pnn":
                 check_points = [torch_ext.load_checkpoint(ck_path) for ck_path in ['output/HumanoidIm/phc_3/Humanoid_00258000.pth',
                                                                                    'output/HumanoidIm/phc_comp_3/Humanoid_00023501.pth']]
                 self.pnn = load_pnn(check_points[0],
@@ -369,10 +369,16 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                                     has_lateral = False, 
                                     activation = "silu", 
                                     device = self.device)
-#                self.running_mean, self.running_var = check_points[0]['running_mean_std']['running_mean'], check_points[0]['running_mean_std']['running_var']
                 self.composer = load_mcp_mlp(check_points[1], activation = "silu", device = self.device, mlp_name = "composer")
-
-            self.running_mean, self.running_var = check_points[-1]['running_mean_std']['running_mean'], check_points[-1]['running_mean_std']['running_var']
+                self.running_mean, self.running_var = check_points[-1]['running_mean_std']['running_mean'], check_points[-1]['running_mean_std']['running_var']
+            elif self.teacher_mode == "h36m":
+                check_points = [torch_ext.load_checkpoint('output/HumanoidIm/phc_prim/Humanoid_00018000_h36m.pth')]
+                self.encoder = load_mcp_mlp(check_points[0], activation = "silu", device = self.device)
+                self.running_mean, self.running_var = check_points[-1]['running_mean_std']['running_mean'], check_points[-1]['running_mean_std']['running_var']
+            elif self.teacher_mode == "aist":
+                check_points = [torch_ext.load_checkpoint('output/HumanoidIm/phc_prim/Humanoid_00027000_aist.pth')]
+                self.encoder = load_mcp_mlp(check_points[0], activation = "silu", device = self.device)
+                self.running_mean, self.running_var = check_points[-1]['running_mean_std']['running_mean'], check_points[-1]['running_mean_std']['running_var']
 
         
         ######################
@@ -597,13 +603,13 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             self._motion_train_lib = MotionLibSMPL(motion_lib_cfg)
 
             # TODO FQ: AMP
-            # motion_lib_cfg["motion_file"] = "XXXXXXX"
-            # self._motion_amp_lib = MotionLibSMPL(motion_lib_cfg)
-            # motion_lib_cfg["motion_file"] = motion_train_file
+            motion_lib_cfg["motion_file"] = "./data/amass_smpl/train.pkl"
+            self._motion_amp_lib = MotionLibSMPL(motion_lib_cfg)
+            motion_lib_cfg["motion_file"] = motion_train_file
             # It's ok to use current keys
-            # self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=self.humanoid_shapes.cpu(),
-            #                               limb_weights=self.humanoid_limb_and_weights.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
-            #                               max_len=-1 if flags.test else self.max_len, start_idx=self.start_idx)
+            self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=self.humanoid_shapes.cpu(),
+                                          limb_weights=self.humanoid_limb_and_weights.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
+                                          max_len=-1 if flags.test else self.max_len, start_idx=self.start_idx)
 
 
             motion_lib_cfg.im_eval = True
@@ -658,8 +664,8 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             self.forward_motion_samples()
         else:
             # TODO FQ: AMP
-            #self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, limb_weights=self.humanoid_limb_and_weights.cpu(), gender_betas=self.humanoid_shapes.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
-            #                              max_len=-1 if flags.test else self.max_len)  # For now, only need to sample motions since there are only 400 hmanoids
+            self._motion_amp_lib.load_motions(skeleton_trees=self.skeleton_trees, limb_weights=self.humanoid_limb_and_weights.cpu(), gender_betas=self.humanoid_shapes.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
+                                          max_len=-1 if flags.test else self.max_len)  # For now, only need to sample motions since there are only 400 hmanoids
                         
             self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, limb_weights=self.humanoid_limb_and_weights.cpu(), gender_betas=self.humanoid_shapes.cpu(), random_sample=(not flags.test) and (not self.seq_motions),
                                           max_len=-1 if flags.test else self.max_len)  # For now, only need to sample motions since there are only 400 hmanoids
@@ -950,7 +956,8 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
     def post_physics_step(self):
         super().post_physics_step()
         # TODO FQ Here
-        self.extras["kin_dict"] = self.kin_dict
+        if self.kin_loss:
+            self.extras["kin_dict"] = self.kin_dict
         
         if flags.im_eval:
             motion_times = (self.progress_buf) * self.dt + self._motion_start_times + self._motion_start_times_offset  # already has time + 1, so don't need to + 1 to get the target for "this frame"
@@ -982,11 +989,18 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             full_obs = ((self.ori_obs_buf - self.running_mean.float()) / torch.sqrt(self.running_var.float() + 1e-05))
             full_obs = torch.clamp(full_obs, min=-5.0, max=5.0)
 
-            _, pnn_actions = self.pnn(full_obs)
-            x_all = torch.stack(pnn_actions, dim=1)
-            weights = self.composer(full_obs)
-            gt_action = torch.sum(weights[:, :, None] * x_all, dim=1)
-            self.kin_dict = gt_action.squeeze()
+            if self.teacher_mode == "pnn":
+                _, pnn_actions = self.pnn(full_obs)
+                x_all = torch.stack(pnn_actions, dim=1)
+                weights = self.composer(full_obs)
+                gt_action = torch.sum(weights[:, :, None] * x_all, dim=1)
+                self.kin_dict = gt_action.squeeze()
+            elif self.teacher_mode == "h36m":
+                gt_action = self.encoder(full_obs)
+                self.kin_dict = gt_action.squeeze()
+            elif self.teacher_mode == "aist":
+                gt_action = self.encoder(full_obs)
+                self.kin_dict = gt_action.squeeze()
         ################################################################################
 
 

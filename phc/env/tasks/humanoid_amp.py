@@ -219,13 +219,16 @@ class HumanoidAMP(Humanoid):
         else:
             assert (self._amp_obs_demo_buf.shape[0] == num_samples)
 
+#        motion_ids = self._motion_lib.sample_motions(num_samples)
+#        motion_times0 = self._sample_time(motion_ids)
+#        amp_obs_demo = self.build_amp_obs_demo(motion_ids, motion_times0)
+        # TODO FQ: AMP HACK!
+
+        self._motion_lib = self._motion_amp_lib
         motion_ids = self._motion_lib.sample_motions(num_samples)
         motion_times0 = self._sample_time(motion_ids)
         amp_obs_demo = self.build_amp_obs_demo(motion_ids, motion_times0)
-        # TODO FQ: AMP
-        # motion_ids = self._motion_amp_lib.sample_motions(num_samples)
-        # motion_times0 = self._motion_amp_lib.sample_time_interval(motion_ids)
-        # amp_obs_demo = self.fq_build_amp_obs_demo(motion_ids, motion_times0)
+        self._motion_lib = self._motion_train_lib
 
         
         self._amp_obs_demo_buf[:] = amp_obs_demo.view(self._amp_obs_demo_buf.shape)

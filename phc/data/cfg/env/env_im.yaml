@@ -23,6 +23,7 @@ kin_loss: False
 kin_lr: 5e-4
 kin_weight: 0.1
 kin_dict_size: 63
+teacher_mode: "pnn" #"h36m", "aist"
 
 kp_scale: 1
 power_reward: True

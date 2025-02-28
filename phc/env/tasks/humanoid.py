@@ -302,6 +302,7 @@ class Humanoid(BaseTask):
         self.kin_lr     = cfg["env"].get("kin_lr", 5e-4)
         self.kin_weight = cfg["env"].get("kin_weight", 0.1)
         self.kin_dict_size = cfg["env"].get("kin_dict_size", 69)
+        self.teacher_mode = cfg["env"].get("teacher_mode", "pnn")
 
         self.z_readout = cfg["env"].get("z_readout", False)
         self.z_read = cfg["env"].get("z_read", False)
@@ -747,7 +748,7 @@ class Humanoid(BaseTask):
             
             if not smpl_robot is None:
                 asset_id = uuid4()
-                asset_file_real = f"/tmp/smpl/smpl_humanoid_{asset_id}.xml"
+                asset_file_real = f"/mnt/kostas-graid/sw/envs/fengqiao/repo/tmp/smpl/smpl_humanoid_{asset_id}.xml"
                 smpl_robot.load_from_skeleton(betas=torch.from_numpy(gender_beta[None, 1:]), gender=gender_beta[0:1], objs_info=None)
                 smpl_robot.write_xml(asset_file_real)
             else:
