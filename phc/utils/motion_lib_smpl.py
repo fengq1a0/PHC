@@ -174,14 +174,22 @@ class MotionLibSMPL(MotionLibBase):
             curr_motion.dof_vels = curr_dof_vels
             curr_motion.gender_beta = curr_gender_beta
             ##########FQ_info: step 0 ##############
-            #FQ_feat = torch.zeros(1240)
             FQ_feat = []
-            for kk in ["img_feat"]: # , "kp2d", "bbox", "T_c2g", "poses_g"
-                # img_feat: 1024
-                # bbox:     3
-                # kp2d:     23*3
-                # T_c2g:    16
-                FQ_feat.append(curr_file.get(kk, torch.zeros(B,32)))
+            FQ_feat.append(trans_fix.float()[None].expand(B, 1))
+            for kk in ["img_feat", "camera", "kp2d"]: # , "kp2d", "bbox", "T_c2g", "poses_g"
+                # trans_fix: 1         z -= trans_fix
+                # img_feat:  512
+                # joints:    135       debug only
+                # camera:    3
+                # kp2d:      40                
+                # 1 + 512 + 3 + 40 = 556
+                if kk not in curr_file:
+                    continue                
+                tmp = curr_file.get(kk)
+                if kk == "camera" or kk == "kp2d":
+                    tmp[:,:,2] -= trans_fix.numpy()
+                tmp = tmp.reshape(B, -1)
+                FQ_feat.append(tmp)
             FQ_feat = torch.from_numpy(np.concatenate(FQ_feat, axis=1)).float()
             ########################################
             res[curr_id] = (curr_file, curr_motion, FQ_feat)

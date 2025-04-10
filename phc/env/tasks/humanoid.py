@@ -298,6 +298,7 @@ class Humanoid(BaseTask):
         
         
         ## Kin stuff
+        self.test_time  = cfg["env"].get("test_time", False)
         self.kin_loss   = cfg["env"].get("kin_loss", False)
         self.kin_lr     = cfg["env"].get("kin_lr", 5e-4)
         self.kin_weight = cfg["env"].get("kin_weight", 0.1)

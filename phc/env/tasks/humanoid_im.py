@@ -798,6 +798,12 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 obs_size = 9 * 24 # 3 position + 6 rotation
             elif self.obs_v == 999:
                 obs_size = 6 * 24 + 3 + 9 # Add 6 rotation and 3 position  
+            elif self.obs_v == 358: # kp2d + rotation
+                obs_size = 512 + 6 + 40
+            elif self.obs_v == 359: # kp2d only
+                obs_size = 512 + 40
+            elif self.obs_v == 360: # rotation only
+                obs_size = 512 + 6
             else:
                 raise NotImplementedError("No such observation")
 
@@ -1183,7 +1189,8 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
             obs = compute_imitation_observations_v2(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, dof_pos_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, ref_dof_pos_subset, time_steps, self._has_upright_start)
         elif self.obs_v == 3:
             obs = compute_imitation_observations_v3(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, time_steps, self._has_upright_start)
-        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66 or self.obs_v == 767 or self.obs_v == 88 or self.obs_v == 999 or self.obs_v == 77:
+        elif self.obs_v == 4 or self.obs_v == 5 or self.obs_v == 6 or self.obs_v == 8 or self.obs_v == 9 or self.obs_v == 66 or self.obs_v == 767 or self.obs_v == 88 or self.obs_v == 999 or self.obs_v == 77 \
+            or self.obs_v == 358 or self.obs_v == 359 or self.obs_v == 360:
 
             if self.zero_out_far:
                 close_distance = self.close_distance
@@ -1241,6 +1248,24 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                     ref_body_ang_vel_subset, time_steps, self._has_upright_start)
             elif self.obs_v == 77:
                 obs = motion_res["FQ_feat"]
+            elif self.obs_v == 358: # kp2d + rotation
+                obs = compute_imitation_observations_v358(
+                    motion_res["FQ_feat"],
+                    root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, 
+                    body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, 
+                    ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+            elif self.obs_v == 359: # kp2d only
+                obs = compute_imitation_observations_v359(
+                    motion_res["FQ_feat"],
+                    root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, 
+                    body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, 
+                    ref_body_ang_vel_subset, time_steps, self._has_upright_start)
+            elif self.obs_v == 360: # rotation only
+                obs = compute_imitation_observations_v360(
+                    motion_res["FQ_feat"],
+                    root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, 
+                    body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, 
+                    ref_body_ang_vel_subset, time_steps, self._has_upright_start)
             else:
                 raise NotImplementedError("No such observerion")
 
@@ -1306,6 +1331,7 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
         ref_root_pos, ref_root_rot, ref_dof_pos, ref_root_vel, ref_root_ang_vel, ref_dof_vel, ref_smpl_params, ref_limb_weights, ref_pose_aa, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel = \
                 motion_res["root_pos"], motion_res["root_rot"], motion_res["dof_pos"], motion_res["root_vel"], motion_res["root_ang_vel"], motion_res["dof_vel"], \
                 motion_res["motion_bodies"], motion_res["motion_limb_weights"], motion_res["motion_aa"], motion_res["rg_pos"], motion_res["rb_rot"], motion_res["body_vel"], motion_res["body_ang_vel"]
+        
 
         root_pos = body_pos[..., 0, :]
         root_rot = body_rot[..., 0, :]
@@ -1345,10 +1371,14 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                     
                     self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos_extend, body_rot_extend, body_vel, body_ang_vel, ref_rb_pos_extend, ref_rb_rot_extend, ref_body_vel, ref_body_ang_vel, self.reward_specs)
                 else:
-                    if flags.pos_2d_only:
-                        self.rew_buf[:], self.reward_raw = compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
+                    if self.test_time:
+                        self.rew_buf[:], self.reward_raw = compute_test_time_reward(motion_res["FQ_feat"],
+                                                                                       root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, 1, self._has_upright_start)
                     else:
-                        self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
+                        if flags.pos_2d_only:
+                            self.rew_buf[:], self.reward_raw = compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
+                        else:
+                            self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_rb_pos, ref_rb_rot, ref_body_vel, ref_body_ang_vel, self.reward_specs)
             else:
                 body_pos_subset = body_pos[..., self._track_bodies_id, :]
                 body_rot_subset = body_rot[..., self._track_bodies_id, :]
@@ -1360,6 +1390,9 @@ class HumanoidIm(humanoid_amp_task.HumanoidAMPTask):
                 ref_body_vel_subset = ref_body_vel[..., self._track_bodies_id, :]
                 ref_body_ang_vel_subset = ref_body_ang_vel[..., self._track_bodies_id, :]
                 self.rew_buf[:], self.reward_raw = compute_imitation_reward(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset, ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset, self.reward_specs)
+
+
+
 
         # print(self.dof_force_tensor.abs().max())
         if self.power_reward:
@@ -1918,6 +1951,175 @@ def compute_imitation_observations_v66(feature, root_pos, root_rot, body_pos, bo
     obs = torch.cat(obs, dim=-1).view(B, -1)
     return obs
 
+@torch.jit.script
+def compute_imitation_observations_v358(feature, root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+
+    # trans_fix: 1         z -= trans_fix
+    # img_feat:  512
+    # camera:    3
+    # kp2d:      40                
+    # 1 + 512 + 3 + 40 = 556
+
+    # feature torch.Size([128, 556])
+
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    heading_inv_rot_kp2d = heading_inv_rot.unsqueeze(-2).repeat((1, 10, 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+    #
+    # local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+    # print(body_pos.shape) B 24 3
+    m2smpl = [0, 1, 5, 9, 2, 6, 10, 3, 7, 11, 4, 8, 12, 14, 19, 13, 15, 20, 16, 21, 17, 22, 18, 23]
+    smpl_id = [16, 17, 18, 19, 20, 21, 4, 5, 7, 8]
+    kp2d    = feature[:,516:].view(B, 10, 4)     # [B, 10, 4]
+    weight  = kp2d[:,:,3:]                       # [B, 10, 1]
+    tmp_pos = body_pos[:,m2smpl,:][:,smpl_id,:]  # [B, 10, 3]
+    cam_pos = feature[:,513:516].view(B, 1, 3)   # [B,  1, 3]
+
+    vec_pos = kp2d[:,:,0:3] - cam_pos
+    vec_pos = vec_pos / torch.norm(vec_pos, dim=-1, keepdim=True)
+    tmp_pos = tmp_pos - cam_pos
+    proj_len = (tmp_pos * vec_pos).sum(dim=-1, keepdim=True)
+    proj_pos = proj_len * vec_pos
+    dist_vec = tmp_pos - proj_pos                # [B, 10, 3]
+
+    dist_vec = torch_utils.my_quat_rotate(heading_inv_rot_kp2d.view(-1, 4), dist_vec.view(-1, 3)).view(B, 10, 3)
+    
+#    tmp = torch.norm(dist_vec, dim=-1, keepdim=True).mean()
+#    print(tmp)
+
+
+    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+    local_ref_body_rot = local_ref_body_rot.view(B, time_steps, J, 6)[:,:,0:1,:]
+
+    # make some changes to how futures are appended.
+#    obs.append(local_ref_body_pos.view(B, time_steps, 3))
+    obs.append(feature[:,1:1+512].view(B, time_steps, -1))  # timestep  * 24 * 6
+    obs.append(local_ref_body_rot.view(B, time_steps, 6))
+    obs.append(dist_vec.view(B, time_steps, 30))
+    obs.append(weight.view(B, time_steps, 10))
+    
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+@torch.jit.script
+def compute_imitation_observations_v360(feature, root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+
+    # trans_fix: 1         z -= trans_fix
+    # img_feat:  512
+    # joints:    135       debug only
+    # camera:    3
+    # kp2d:      40                
+    # 1 + 512 + 3 + 40 = 556
+
+    # feature torch.Size([128, 556])
+
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+#    local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+#    local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
+#    local_ref_body_pos = local_ref_body_pos.view(B, time_steps, J, 3)[:,:,0:1,:]
+
+    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+    local_ref_body_rot = local_ref_body_rot.view(B, time_steps, J, 6)[:,:,0:1,:]
+
+    # make some changes to how futures are appended.
+#    obs.append(local_ref_body_pos.view(B, time_steps, 3))
+    obs.append(feature[:,1:1+512].view(B, time_steps, -1))  # timestep  * 24 * 6
+    obs.append(local_ref_body_rot.view(B, time_steps, 6))
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
+@torch.jit.script
+def compute_imitation_observations_v359(feature, root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tensor
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+
+    # trans_fix: 1         z -= trans_fix
+    # img_feat:  512
+    # camera:    3
+    # kp2d:      40                
+    # 1 + 512 + 3 + 40 = 556
+
+    # feature torch.Size([128, 556])
+
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    heading_inv_rot_kp2d = heading_inv_rot.unsqueeze(-2).repeat((1, 10, 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+    #
+    # local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+    # print(body_pos.shape) B 24 3
+    m2smpl = [0, 1, 5, 9, 2, 6, 10, 3, 7, 11, 4, 8, 12, 14, 19, 13, 15, 20, 16, 21, 17, 22, 18, 23]
+    smpl_id = [16, 17, 18, 19, 20, 21, 4, 5, 7, 8]
+    kp2d    = feature[:,516:].view(B, 10, 4)     # [B, 10, 4]
+    weight  = kp2d[:,:,3:]                       # [B, 10, 1]
+    tmp_pos = body_pos[:,m2smpl,:][:,smpl_id,:]  # [B, 10, 3]
+    cam_pos = feature[:,513:516].view(B, 1, 3)   # [B,  1, 3]
+
+    vec_pos = kp2d[:,:,0:3] - cam_pos
+    vec_pos = vec_pos / torch.norm(vec_pos, dim=-1, keepdim=True)
+    tmp_pos = tmp_pos - cam_pos
+    proj_len = (tmp_pos * vec_pos).sum(dim=-1, keepdim=True)
+    proj_pos = proj_len * vec_pos
+    dist_vec = tmp_pos - proj_pos                # [B, 10, 3]
+
+    dist_vec = torch_utils.my_quat_rotate(heading_inv_rot_kp2d.view(-1, 4), dist_vec.view(-1, 3)).view(B, 10, 3)
+    
+#    tmp = torch.norm(dist_vec, dim=-1, keepdim=True).mean()
+#    print(tmp)
+
+#
+#    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+#    local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
+#    local_ref_body_rot = local_ref_body_rot.view(B, time_steps, J, 6)[:,:,0:1,:]
+
+    # make some changes to how futures are appended.
+#    obs.append(local_ref_body_pos.view(B, time_steps, 3))
+    obs.append(feature[:,1:1+512].view(B, time_steps, -1))  # timestep  * 24 * 6
+#    obs.append(local_ref_body_rot.view(B, time_steps, 6))
+    obs.append(dist_vec.view(B, time_steps, 30))
+    obs.append(weight.view(B, time_steps, 10))
+    
+
+    obs = torch.cat(obs, dim=-1).view(B, -1)
+    return obs
+
 
 @torch.jit.script
 def compute_imitation_observations_v7(root_pos, root_rot, body_pos, body_vel, ref_body_pos, ref_body_vel, time_steps, upright):
@@ -2147,6 +2349,80 @@ def compute_imitation_reward_2d(root_pos, root_rot, body_pos, body_rot, body_vel
     # import ipdb
     # ipdb.set_trace()
     return reward, reward_raw
+
+
+@torch.jit.script
+def compute_test_time_reward(feature, root_pos, root_rot, body_pos, body_rot, body_vel, body_ang_vel, ref_body_pos, ref_body_rot, ref_body_vel, ref_body_ang_vel, time_steps, upright):
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor,Tensor, Tensor,Tensor,Tensor, int, bool) -> Tuple[Tensor, Tensor]
+    # Adding pose information at the back
+    # Future tracks in this obs will not contain future diffs.
+
+    # trans_fix: 1         z -= trans_fix
+    # img_feat:  512
+    # camera:    3
+    # kp2d:      40                
+    # 1 + 512 + 3 + 40 = 556
+
+    # feature torch.Size([128, 556])
+
+    obs = []
+    B, J, _ = body_pos.shape
+
+    if not upright:
+        root_rot = remove_base_rot(root_rot)
+
+    heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
+    heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
+
+    heading_inv_rot_kp2d = heading_inv_rot.unsqueeze(-2).repeat((1, 10, 1)).repeat_interleave(time_steps, 0)
+
+    ##### body pos + Dof_pos This part will have proper futuers.
+    #
+    # local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
+    # print(body_pos.shape) B 24 3
+    m2smpl = [0, 1, 5, 9, 2, 6, 10, 3, 7, 11, 4, 8, 12, 14, 19, 13, 15, 20, 16, 21, 17, 22, 18, 23]
+    smpl_id = [16, 17, 18, 19, 20, 21, 4, 5, 7, 8]
+    kp2d    = feature[:,516:].view(B, 10, 4)     # [B, 10, 4]
+    weight  = kp2d[:,:,3:]                       # [B, 10, 1]
+    tmp_pos = body_pos[:,m2smpl,:][:,smpl_id,:]  # [B, 10, 3]
+    cam_pos = feature[:,513:516].view(B, 1, 3)   # [B,  1, 3]
+
+    vec_pos = kp2d[:,:,0:3] - cam_pos
+    vec_pos = vec_pos / torch.norm(vec_pos, dim=-1, keepdim=True)
+    tmp_pos = tmp_pos - cam_pos
+    proj_len = (tmp_pos * vec_pos).sum(dim=-1, keepdim=True)
+    proj_pos = proj_len * vec_pos
+    dist_vec = tmp_pos - proj_pos                # [B, 10, 3]
+
+    
+    dist_vec = dist_vec * weight
+    diff_body_pos_dist = (dist_vec**2).mean(dim=-1).mean(dim=-1)
+    r_body_pos = torch.exp(-100 * diff_body_pos_dist)
+    
+
+
+    local_ref_body_rot = torch_utils.quat_mul(heading_inv_rot_expand.view(-1, 4), ref_body_rot.view(-1, 4))
+    diff_global_body_angle = torch_utils.quat_to_angle_axis(local_ref_body_rot)[0] # 36964
+    diff_global_body_angle = diff_global_body_angle.view(B, 24)[:,0]
+    diff_global_body_angle_dist = (diff_global_body_angle**2)
+    r_body_rot = torch.exp(-10 * diff_global_body_angle_dist)
+
+
+    reward = 0.75 * r_body_pos + 0.25 * r_body_rot
+    reward_raw = torch.stack([r_body_pos, r_body_rot, r_body_rot, r_body_rot], dim=-1)
+    
+    return reward, reward_raw
+
+
+
+
+
+
+
+
+
+
+
 
 @torch.jit.script
 def compute_point_goal_reward(prev_dist, curr_dist):
